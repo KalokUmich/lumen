@@ -1,0 +1,151 @@
+cubes:
+  - name: LineItem
+    sql_table: main.lineitem
+    description: |
+      The grain-zero fact table — one row per item per order.
+      This is where true revenue lives: extended_price * (1 - discount) is
+      the canonical revenue metric. l_extendedprice alone ignores discount.
+    meta:
+      ai_facing: true
+      vertical: tpch
+      domain: orders
+
+    joins:
+      - name: Orders
+        sql: "{CUBE}.l_orderkey = {Orders}.o_orderkey"
+        relationship: many_to_one
+
+    dimensions:
+      - name: line_number
+        sql: "CAST({CUBE}.l_orderkey AS VARCHAR) || '-' || CAST({CUBE}.l_linenumber AS VARCHAR)"
+        type: string
+        primary_key: true
+      - name: ship_date
+        sql: l_shipdate
+        type: time
+        description: "Date the line item shipped"
+      - name: commit_date
+        sql: l_commitdate
+        type: time
+      - name: receipt_date
+        sql: l_receiptdate
+        type: time
+      - name: ship_mode
+        sql: l_shipmode
+        type: string
+        description: "Shipping method"
+        meta:
+          enum_values: [AIR, "FOB", MAIL, RAIL, REG AIR, SHIP, TRUCK]
+          synonyms: [shipping method, shipment type]
+      - name: return_flag
+        sql: l_returnflag
+        type: string
+        description: "Return status"
+        meta:
+          enum_values: [A, N, R]
+          ai_hint: "R = returned, N = not yet returned (in progress), A = accepted/closed"
+      - name: line_status
+        sql: l_linestatus
+        type: string
+        description: "Line item status"
+        meta:
+          enum_values: [F, O]
+
+    measures:
+      - name: revenue
+        sql: "{CUBE}.l_extendedprice * (1 - {CUBE}.l_discount)"
+        type: sum
+        format: currency
+        description: |
+          Canonical revenue: extended_price × (1 - discount).
+          Use this for any 'revenue' / 'sales' question about line items.
+        meta:
+          synonyms: [sales, gmv, top-line, turnover, total sales, total revenue]
+          example_questions:
+            - "Total revenue last quarter"
+            - "Top 10 nations by sales"
+            - "Revenue trend by month"
+
+      - name: revenue_with_tax
+        sql: "{CUBE}.l_extendedprice * (1 - {CUBE}.l_discount) * (1 + {CUBE}.l_tax)"
+        type: sum
+        format: currency
+        description: "Revenue including tax"
+        meta:
+          synonyms: [revenue with tax, gross revenue, billed amount]
+
+      - name: discount_amount
+        sql: "{CUBE}.l_extendedprice * {CUBE}.l_discount"
+        type: sum
+        format: currency
+        description: "Total discount amount granted"
+
+      - name: count
+        sql: l_orderkey
+        type: count
+        description: "Number of line items"
+        meta:
+          synonyms: [line item count, num line items]
+
+      - name: total_quantity
+        sql: l_quantity
+        type: sum
+        description: "Sum of quantities across all line items"
+        meta:
+          synonyms: [total units, units sold, total quantity]
+
+      - name: avg_extended_price
+        sql: l_extendedprice
+        type: avg
+        format: currency
+        description: "Average extended_price (before discount/tax)"
+
+      - name: late_count
+        sql: l_orderkey
+        type: count
+        filters:
+          - sql: "{CUBE}.l_receiptdate > {CUBE}.l_commitdate"
+        description: "Number of line items that arrived after the committed date"
+        meta:
+          synonyms: [late shipments, delayed deliveries]
+
+      - name: late_rate
+        sql: |
+          CASE WHEN COUNT(*) > 0
+            THEN CAST(SUM(CASE WHEN {CUBE}.l_receiptdate > {CUBE}.l_commitdate THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(*)
+            ELSE 0
+          END
+        type: number
+        format: percent
+        description: "Fraction of line items that arrived late"
+        meta:
+          synonyms: [late percentage, on-time miss rate]
+
+      - name: return_rate
+        sql: |
+          CASE WHEN COUNT(*) > 0
+            THEN CAST(SUM(CASE WHEN {CUBE}.l_returnflag = 'R' THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(*)
+            ELSE 0
+          END
+        type: number
+        format: percent
+        description: "Fraction of line items that were returned"
+        meta:
+          synonyms: [return percentage, returns rate]
+
+    segments:
+      - name: returned
+        sql: "{CUBE}.l_returnflag = 'R'"
+        description: "Line items that have been returned"
+      - name: shipped
+        sql: "{CUBE}.l_shipdate IS NOT NULL"
+        description: "Line items that have shipped"
+      - name: late
+        sql: "{CUBE}.l_receiptdate > {CUBE}.l_commitdate"
+        description: "Line items received after the committed date"
+      - name: by_air
+        sql: "{CUBE}.l_shipmode IN ('AIR', 'REG AIR')"
+        description: "Shipped by air"
+      - name: heavy_quantity
+        sql: "{CUBE}.l_quantity >= 40"
+        description: "Bulk-quantity line items (40 units or more)"

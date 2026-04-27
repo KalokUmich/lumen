@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lumen
+      POSTGRES_PASSWORD: lumen
+      POSTGRES_MULTIPLE_DATABASES: app,warehouse
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/init-multi-db.sh:/docker-entrypoint-initdb.d/init-multi-db.sh:ro
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  cube:
+    image: cubejs/cube:latest
+    ports:
+      - "4000:4000"
+    environment:
+      CUBEJS_DEV_MODE: "true"
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: postgres
+      CUBEJS_DB_NAME: warehouse
+      CUBEJS_DB_USER: lumen
+      CUBEJS_DB_PASS: lumen
+      CUBEJS_API_SECRET: local-dev-secret-change-me
+      CUBEJS_SCHEMA_PATH: schema
+    volumes:
+      - ./backend/cube/schema:/cube/conf/schema
+      - ./backend/cube/cube.js:/cube/conf/cube.js
+    depends_on:
+      - postgres
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    ports:
+      - "7233:7233"
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: lumen
+      POSTGRES_PWD: lumen
+      POSTGRES_SEEDS: postgres
+    depends_on:
+      - postgres
+
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,secretsmanager
+      DEBUG: 0
+
+volumes:
+  pg_data:

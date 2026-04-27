@@ -1,0 +1,105 @@
+cubes:
+  - name: Orders
+    sql_table: public.orders
+    description: |
+      One row per customer order. Used for revenue, order volume,
+      and customer purchase behavior analysis.
+      Only orders with status='paid' count as revenue.
+    meta:
+      ai_facing: true
+      domain: sales
+
+    joins:
+      - name: Customers
+        sql: "{CUBE}.customer_id = {Customers}.id"
+        relationship: many_to_one
+
+    dimensions:
+      - name: id
+        sql: id
+        type: string
+        primary_key: true
+
+      - name: status
+        sql: status
+        type: string
+        description: "Order lifecycle status."
+        meta:
+          enum_values: [paid, refunded, cancelled, pending]
+          ai_hint: "Filter to status='paid' for revenue queries."
+
+      - name: created_at
+        sql: created_at
+        type: time
+        description: "When the order was placed (UTC)."
+
+      - name: country
+        sql: shipping_country
+        type: string
+        description: "Country shipped to (ISO 2-letter code)."
+        meta:
+          synonyms: [region, ship_to_country, market]
+
+      - name: customer_id
+        sql: customer_id
+        type: string
+        description: "Foreign key to Customers.id"
+
+    measures:
+      - name: revenue
+        sql: amount_usd
+        type: sum
+        filters:
+          - sql: "{CUBE}.status = 'paid'"
+        format: currency
+        description: |
+          Total paid order amount in USD.
+          Excludes refunded and cancelled orders.
+        meta:
+          synonyms: [sales, gmv, top-line, turnover, total_sales]
+          example_questions:
+            - "What was revenue last month?"
+            - "Top 10 countries by sales this quarter"
+
+      - name: order_count
+        sql: id
+        type: count_distinct
+        description: "Number of unique orders (any status)."
+        meta:
+          synonyms: [orders, transactions, purchase_count, num_orders]
+
+      - name: paid_order_count
+        sql: id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status = 'paid'"
+        description: "Number of paid orders only."
+        meta:
+          synonyms: [paid_orders, completed_orders]
+
+      - name: aov
+        sql: "{revenue} / {paid_order_count}"
+        type: number
+        format: currency
+        description: "Average Order Value — paid revenue per paid order."
+        meta:
+          synonyms: [average_order_value, avg_ticket, avg_basket]
+
+    segments:
+      - name: high_value
+        sql: "{CUBE}.amount_usd > 1000"
+        description: "Orders over $1000."
+
+      - name: paid_only
+        sql: "{CUBE}.status = 'paid'"
+        description: "Only paid orders."
+
+    pre_aggregations:
+      - name: daily_country_revenue
+        measures: [Orders.revenue, Orders.paid_order_count]
+        dimensions: [Orders.country]
+        time_dimension: Orders.created_at
+        granularity: day
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour

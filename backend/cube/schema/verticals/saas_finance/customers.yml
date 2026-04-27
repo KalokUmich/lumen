@@ -1,0 +1,81 @@
+cubes:
+  - name: Accounts
+    sql_table: main.accounts
+    description: |
+      Customer accounts (B2B SaaS — one row per company, not per seat).
+      Used for ARR, churn cohort, and account-level reporting.
+    meta:
+      ai_facing: true
+      vertical: saas_finance
+      domain: customers
+
+    dimensions:
+      - name: id
+        sql: id
+        type: string
+        primary_key: true
+      - name: company_name
+        sql: company_name
+        type: string
+      - name: industry
+        sql: industry
+        type: string
+        description: "Customer's industry vertical"
+        meta:
+          enum_values: [SaaS, Finance, Healthcare, Retail, Manufacturing, Education, Other]
+          synonyms: [vertical, sector]
+      - name: country
+        sql: country
+        type: string
+      - name: signup_date
+        sql: signup_date
+        type: time
+        description: "When the account was created"
+      - name: plan_tier
+        sql: plan_tier
+        type: string
+        description: "Subscription plan tier"
+        meta:
+          enum_values: [Free, Starter, Growth, Enterprise]
+          synonyms: [tier, plan, subscription tier]
+      - name: status
+        sql: status
+        type: string
+        meta:
+          enum_values: [active, churned, paused]
+          ai_hint: "Filter to status='active' for live-customer questions"
+
+    measures:
+      - name: count
+        sql: id
+        type: count_distinct
+        description: "Total accounts (any status)"
+        meta:
+          synonyms: [accounts, customers, num accounts]
+
+      - name: active_count
+        sql: id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status = 'active'"
+        description: "Currently-active accounts"
+        meta:
+          synonyms: [active customers, paying customers, live accounts]
+          example_questions:
+            - "How many active customers do we have?"
+            - "Active customer growth over time"
+
+      - name: churned_count
+        sql: id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status = 'churned'"
+        description: "Accounts that have churned (cumulative)"
+
+    segments:
+      - name: enterprise
+        sql: "{CUBE}.plan_tier = 'Enterprise'"
+        description: "Enterprise-tier accounts"
+      - name: paying
+        sql: "{CUBE}.plan_tier IN ('Starter','Growth','Enterprise')"
+        description: "Accounts on a paid plan (excludes Free)"

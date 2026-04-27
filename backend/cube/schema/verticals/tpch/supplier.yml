@@ -1,0 +1,39 @@
+cubes:
+  - name: Supplier
+    sql_table: main.supplier
+    description: |
+      Suppliers, each based in a nation. Used for supply-side analysis.
+    meta:
+      ai_facing: true
+      vertical: tpch
+      domain: supply
+
+    joins:
+      - name: Nation
+        sql: "{CUBE}.s_nationkey = {Nation}.n_nationkey"
+        relationship: many_to_one
+
+    dimensions:
+      - name: key
+        sql: s_suppkey
+        type: number
+        primary_key: true
+      - name: name
+        sql: s_name
+        type: string
+      - name: account_balance
+        sql: s_acctbal
+        type: number
+        description: "Supplier account balance (USD)"
+
+    measures:
+      - name: count
+        sql: s_suppkey
+        type: count_distinct
+        description: "Number of unique suppliers"
+        meta:
+          synonyms: [suppliers, num_suppliers, vendors]
+      - name: avg_account_balance
+        sql: s_acctbal
+        type: avg
+        format: currency

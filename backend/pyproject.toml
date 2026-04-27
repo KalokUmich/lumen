@@ -1,0 +1,76 @@
+[project]
+name = "omni-backend"
+version = "0.1.0"
+description = "Omni-Clone backend — all Python services in one workspace"
+requires-python = ">=3.12"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sse-starlette>=2.1.0",
+    # HTTP client
+    "httpx>=0.27.0",
+    # Validation / settings
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    # Async DB
+    "asyncpg>=0.30.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "alembic>=1.14.0",
+    # Mongo
+    "motor>=3.6.0",
+    # MySQL
+    "aiomysql>=0.2.0",
+    # DuckDB (used by local_test/)
+    "duckdb>=1.1.3",
+    # Redis
+    "redis>=5.2.0",
+    # AWS / Bedrock
+    "boto3>=1.35.0",
+    "anthropic[bedrock]>=0.40.0",
+    # Auth
+    "authlib>=1.3.2",
+    "pyjwt[crypto]>=2.10.0",
+    # Observability
+    "opentelemetry-sdk>=1.28.0",
+    "opentelemetry-instrumentation-fastapi>=0.49b0",
+    "structlog>=24.4.0",
+    # Workflow
+    "temporalio>=1.8.0",
+    # YAML
+    "pyyaml>=6.0.2",
+    # Utility
+    "tenacity>=9.0.0",        # retries
+    "python-multipart>=0.0.17",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "pyright>=1.1.388",
+    "testcontainers[postgres,redis]>=4.8.0",
+    "respx>=0.21.1",         # httpx mocks
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "ASYNC", "S", "RUF"]
+ignore = ["S101"]  # allow assert in tests
+
+[tool.pyright]
+include = ["shared", "services"]
+strict = ["shared", "services/ai_service"]
+pythonVersion = "3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "eval: AI golden-set regression tests (slow, require Bedrock or mock)",
+    "integration: hits real DB / Cube",
+]

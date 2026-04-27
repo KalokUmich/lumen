@@ -1,0 +1,98 @@
+cubes:
+  - name: Orders
+    sql_table: main.orders
+    description: |
+      One row per customer order. Used for order volume, top-line revenue,
+      priority mix, and time-series analysis.
+      Order status is one of: F (finished), O (open), P (partial).
+    meta:
+      ai_facing: true
+      vertical: tpch
+      domain: orders
+
+    joins:
+      - name: Customer
+        sql: "{CUBE}.o_custkey = {Customer}.c_custkey"
+        relationship: many_to_one
+
+    dimensions:
+      - name: key
+        sql: o_orderkey
+        type: number
+        primary_key: true
+      - name: status
+        sql: o_orderstatus
+        type: string
+        description: "Order lifecycle status"
+        meta:
+          enum_values: [F, O, P]
+          ai_hint: |
+            F = Finished (fully shipped); O = Open (in progress); P = Partial.
+            For 'completed orders' or 'finished orders' filter to status='F'.
+      - name: order_date
+        sql: o_orderdate
+        type: time
+        description: "Date the order was placed"
+      - name: order_priority
+        sql: o_orderpriority
+        type: string
+        description: "Customer-specified priority"
+        meta:
+          enum_values:
+            - 1-URGENT
+            - 2-HIGH
+            - 3-MEDIUM
+            - 4-NOT SPECIFIED
+            - 5-LOW
+          synonyms: [priority]
+      - name: ship_priority
+        sql: o_shippriority
+        type: number
+
+    measures:
+      - name: count
+        sql: o_orderkey
+        type: count_distinct
+        description: "Number of unique orders"
+        meta:
+          synonyms: [orders, order_count, transactions, num orders]
+          example_questions:
+            - "How many orders did we get last quarter?"
+            - "Order volume by month"
+      - name: total_price
+        sql: o_totalprice
+        type: sum
+        format: currency
+        description: |
+          Sum of order total_price (a header value on each order; for
+          true revenue grounded in line items, use LineItem.revenue instead).
+        meta:
+          synonyms: [order total, total order value]
+      - name: avg_total_price
+        sql: o_totalprice
+        type: avg
+        format: currency
+        description: "Average order total_price"
+        meta:
+          synonyms: [avg order value, average order, aov]
+
+      - name: avg_quantity_per_order
+        sql: "(SELECT AVG(quantity_per_order) FROM (SELECT SUM(l_quantity) AS quantity_per_order FROM main.lineitem GROUP BY l_orderkey) sub)"
+        type: number
+        description: "Average total units per order (across all lineitems in the order)"
+        meta:
+          synonyms: [avg basket size, mean order size]
+
+    segments:
+      - name: open
+        sql: "{CUBE}.o_orderstatus = 'O'"
+        description: "Orders still in progress"
+      - name: finished
+        sql: "{CUBE}.o_orderstatus = 'F'"
+        description: "Orders that have been completed"
+      - name: high_priority
+        sql: "{CUBE}.o_orderpriority IN ('1-URGENT', '2-HIGH')"
+        description: "Urgent or high-priority orders"
+      - name: large_orders
+        sql: "{CUBE}.o_totalprice > 100000"
+        description: "Orders with header total over $100K"

@@ -1,0 +1,222 @@
+# Lumen — non-secret platform settings.
+# Committed to the repo. Local overrides go in settings.local.yaml (gitignored).
+# Loader merges settings.local.yaml on top of this file.
+
+# ──────────────────────────────────────────────────────────────────────
+# LLM PROVIDERS
+# ──────────────────────────────────────────────────────────────────────
+# Each provider has its own tier mapping. At service startup we run a
+# health check against every enabled provider; failures mark the provider
+# unavailable for the lifetime of the process.
+
+llm:
+  # Default provider used by routing. Must be one of the keys in `providers`.
+  # Set to null to disable LLM features entirely.
+  default_provider: bedrock
+
+  # If the default provider's health check fails (or it errors at runtime),
+  # try these in order. Empty list = no fallback.
+  fallback_providers: [anthropic]
+
+  providers:
+    # ─── AWS Bedrock ────────────────────────────────────────────────
+    bedrock:
+      enabled: true
+      region: us-east-1
+      # Optional: assume an IAM role instead of using the calling identity.
+      # assume_role_arn: arn:aws:iam::123456789012:role/LumenBedrockInvoke
+      tiers:
+        strong: anthropic.claude-opus-4-7-20251201-v1:0
+        medium: anthropic.claude-sonnet-4-6-20251022-v1:0
+        weak: anthropic.claude-haiku-4-5-20251001-v1:0
+      # Endpoint used by health check. Sends a 1-token completion.
+      health_check:
+        tier: weak
+        max_tokens: 1
+
+    # ─── Anthropic API (direct) ─────────────────────────────────────
+    anthropic:
+      enabled: true
+      base_url: https://api.anthropic.com
+      tiers:
+        strong: claude-opus-4-7
+        medium: claude-sonnet-4-6
+        weak: claude-haiku-4-5
+      health_check:
+        tier: weak
+        max_tokens: 1
+
+    # ─── Alibaba DashScope (Qwen) ──────────────────────────────────
+    # Uses the OpenAI-compatible endpoint.
+    alibaba:
+      enabled: true
+      # International endpoint; switch to the China endpoint as needed.
+      base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      tiers:
+        strong: qwen-max
+        medium: qwen-plus
+        weak: qwen-turbo
+      health_check:
+        tier: weak
+        max_tokens: 1
+
+  # Task → tier defaults (provider-agnostic).
+  task_defaults:
+    text_to_query: medium
+    query_summary: weak
+    chart_recommendation: weak
+    autocomplete: weak
+    schema_description_gen: medium
+    failed_query_analysis: strong
+    complexity_estimator: weak
+    eval_runner: medium
+
+  # Escalation rules.
+  escalation:
+    text_to_query:
+      on_previous_failure: strong
+      on_complex_multi_cube: strong
+
+  # Workspace presets — selected by admin in the UI.
+  workspace_presets:
+    cost_sensitive:
+      text_to_query: weak
+      failed_query_analysis: medium
+    balanced: {}
+    quality_first:
+      text_to_query: strong
+      query_summary: medium
+      chart_recommendation: medium
+
+  # Generation parameters per task (deterministic-by-default for BI).
+  generation:
+    default:
+      max_tokens: 2048
+      temperature: 0.0
+    text_to_query:
+      max_tokens: 4096
+      temperature: 0.0
+    query_summary:
+      max_tokens: 512
+      temperature: 0.2
+
+# ──────────────────────────────────────────────────────────────────────
+# AI BEHAVIOR
+# ──────────────────────────────────────────────────────────────────────
+
+ai:
+  # Maximum reasoning hops in the tool-use loop before giving up.
+  max_hops: 6
+  # If true, AI declines to answer when uncertain instead of guessing.
+  decline_on_low_confidence: true
+  # Number of few-shot examples to include in the prompt (top-K by relevance).
+  few_shot_top_k: 5
+
+# ──────────────────────────────────────────────────────────────────────
+# CACHING
+# ──────────────────────────────────────────────────────────────────────
+
+cache:
+  # Query result cache TTL in Redis (seconds).
+  query_result_ttl: 300
+  # Prompt cache TTL hint sent to LLM provider.
+  prompt_cache_ttl_hint: 3600
+  # Schema bundle cache TTL in AI service memory (seconds).
+  schema_bundle_ttl: 600
+
+# ──────────────────────────────────────────────────────────────────────
+# RATE LIMITS
+# ──────────────────────────────────────────────────────────────────────
+
+rate_limits:
+  # Per workspace × user.
+  api_requests_per_minute: 120
+  ai_chat_messages_per_minute: 30
+  # Long-running queries above this threshold are sent to async path.
+  query_async_threshold_seconds: 30
+
+# ──────────────────────────────────────────────────────────────────────
+# WORKSPACE DEFAULTS
+# ──────────────────────────────────────────────────────────────────────
+
+workspace_defaults:
+  llm_preset: balanced
+  # Token budget per workspace per month. null = unlimited.
+  monthly_token_budget: null
+
+# ──────────────────────────────────────────────────────────────────────
+# CUBE
+# ──────────────────────────────────────────────────────────────────────
+
+cube:
+  api_url: http://localhost:4000/cubejs-api/v1
+  # Long-poll handling — Cube can return "Continue wait"
+  poll_initial_delay_seconds: 0.25
+  poll_max_delay_seconds: 2.0
+  poll_timeout_seconds: 60
+
+# ──────────────────────────────────────────────────────────────────────
+# AUTH
+# ──────────────────────────────────────────────────────────────────────
+
+auth:
+  # Supported OIDC providers (Phase 1+).
+  enabled_oidc_providers: []     # e.g. [okta, google, azure_ad]
+  # Allow dev:* bearer tokens (Phase 0 only).
+  allow_dev_tokens: true
+  # Internal JWT TTL (seconds) — token minted by gateway, consumed by services.
+  internal_jwt_ttl_seconds: 300
+
+# ──────────────────────────────────────────────────────────────────────
+# DATA SOURCES — supported types
+# ──────────────────────────────────────────────────────────────────────
+
+data_sources:
+  supported_types: [postgres, mysql, mongodb, duckdb, sqlite]
+  # Connection test timeout when validating user-entered credentials.
+  test_timeout_seconds: 10
+  # Whether to allow connection from outside the platform's VPC.
+  allow_public_internet_sources: true
+
+# ──────────────────────────────────────────────────────────────────────
+# OBSERVABILITY
+# ──────────────────────────────────────────────────────────────────────
+
+observability:
+  log_level: INFO
+  json_logs: true
+  emit_otel_traces: false
+  emit_prometheus_metrics: true
+
+# ──────────────────────────────────────────────────────────────────────
+# AUDIT
+# ──────────────────────────────────────────────────────────────────────
+
+audit:
+  # Days of audit log retention in app DB before archive to S3.
+  retention_days: 90
+  # Whether to mirror audit events to stdout (in addition to Kafka/DB).
+  mirror_to_stdout: true
+
+# ──────────────────────────────────────────────────────────────────────
+# FEATURE FLAGS
+# ──────────────────────────────────────────────────────────────────────
+
+features:
+  enable_sql_workbench: false       # Phase 1+
+  enable_embedded_analytics: false  # Phase 4+
+  enable_billing: false             # Phase 4+
+  enable_dashboard_scheduling: false # Phase 2+
+  enable_excel_grid: false          # explicit non-goal
+
+# ──────────────────────────────────────────────────────────────────────
+# UI DEFAULTS (sent to frontend on bootstrap)
+# ──────────────────────────────────────────────────────────────────────
+
+ui:
+  default_density: comfortable      # comfortable | dense
+  default_theme: dark               # dark | light | system
+  chart_palette:
+    categorical: ["#5B8FF9","#5AD8A6","#5D7092","#F6BD16","#E8684A","#6DC8EC","#9270CA","#FF9D4D","#269A99","#FF99C3"]
+    sequential:  ["#EAF1FF","#C5D9FF","#8BB1FF","#5B8FF9","#2E5CD8","#1A3A9C"]
+    diverging:   ["#D63E3E","#F09494","#F2F2F2","#9DBFE3","#1F5BB5"]

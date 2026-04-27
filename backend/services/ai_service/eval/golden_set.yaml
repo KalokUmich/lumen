@@ -1,0 +1,329 @@
+# Golden set for AI quality regression — TPC-H vertical.
+#
+# Each entry is both a few-shot example AND an eval case.
+# Tested against:
+#   - Mock LLM (rules-based; sanity check the loop)
+#   - Real Bedrock / Anthropic / Alibaba (the production target)
+#
+# Quality gate: regression must be ≤ 1 case worse than baseline. Failing cases
+# get triaged via the failed-query-review queue, fixed by adjusting the Cube
+# schema's description / synonyms / ai_hint, then promoted back to baseline.
+
+examples:
+  # ── Magnitude (single value) ──────────────────────────────────────────────
+
+  - id: total_revenue
+    question: "What's our total revenue?"
+    cube_query:
+      measures: [LineItem.revenue]
+    expected:
+      measures_used: [LineItem.revenue]
+      expected_shape: big_number
+
+  - id: total_orders
+    question: "How many orders have we received?"
+    cube_query:
+      measures: [Orders.count]
+    expected:
+      measures_used: [Orders.count]
+      expected_shape: big_number
+
+  - id: total_customers
+    question: "How many customers do we have?"
+    cube_query:
+      measures: [Customer.count]
+    expected:
+      measures_used: [Customer.count]
+      expected_shape: big_number
+
+  - id: return_rate_global
+    question: "What is our overall return rate?"
+    cube_query:
+      measures: [LineItem.return_rate]
+    expected:
+      measures_used: [LineItem.return_rate]
+      expected_shape: big_number
+
+  # ── Comparison: 1 measure × 1 dimension ──────────────────────────────────
+
+  - id: revenue_by_region
+    question: "Show me revenue by region"
+    cube_query:
+      measures: [LineItem.revenue]
+      dimensions: [Region.name]
+      order: { "LineItem.revenue": "desc" }
+    expected:
+      measures_used: [LineItem.revenue]
+      dimensions_used: [Region.name]
+
+  - id: top5_nations_revenue
+    question: "Top 5 nations by revenue"
+    cube_query:
+      measures: [LineItem.revenue]
+      dimensions: [Nation.name]
+      order: { "LineItem.revenue": "desc" }
+      limit: 5
+    expected:
+      measures_used: [LineItem.revenue]
+      dimensions_used: [Nation.name]
+      expected_row_count_max: 5
+
+  - id: revenue_by_segment
+    question: "Revenue by customer segment"
+    cube_query:
+      measures: [LineItem.revenue]
+      dimensions: [Customer.market_segment]
+    expected:
+      measures_used: [LineItem.revenue]
+      dimensions_used: [Customer.market_segment]
+
+  - id: orders_by_priority
+    question: "How many orders are there in each priority tier?"
+    cube_query:
+      measures: [Orders.count]
+      dimensions: [Orders.order_priority]
+    expected:
+      measures_used: [Orders.count]
+      dimensions_used: [Orders.order_priority]
+
+  - id: customer_count_by_region
+    question: "Customer count by region"
+    cube_query:
+      measures: [Customer.count]
+      dimensions: [Region.name]
+    expected:
+      measures_used: [Customer.count]
+      dimensions_used: [Region.name]
+
+  - id: top10_nations_customers
+    question: "Top 10 nations by customer count"
+    cube_query:
+      measures: [Customer.count]
+      dimensions: [Nation.name]
+      order: { "Customer.count": "desc" }
+      limit: 10
+    expected:
+      measures_used: [Customer.count]
+      dimensions_used: [Nation.name]
+      expected_row_count_max: 10
+
+  # ── Time series ──────────────────────────────────────────────────────────
+
+  - id: orders_by_month_recent
+    question: "Order count by month for the last 12 months"
+    cube_query:
+      measures: [Orders.count]
+      timeDimensions:
+        - dimension: Orders.order_date
+          granularity: month
+          dateRange: "last 12 months"
+    expected:
+      measures_used: [Orders.count]
+      expected_shape: line
+
+  - id: revenue_trend_year
+    question: "Revenue trend over the last year"
+    cube_query:
+      measures: [LineItem.revenue]
+      timeDimensions:
+        - dimension: Orders.order_date
+          granularity: month
+          dateRange: "last year"
+    expected:
+      measures_used: [LineItem.revenue]
+      expected_shape: line
+
+  - id: revenue_by_region_over_time
+    question: "Revenue by region over time, monthly"
+    cube_query:
+      measures: [LineItem.revenue]
+      dimensions: [Region.name]
+      timeDimensions:
+        - dimension: Orders.order_date
+          granularity: month
+    expected:
+      measures_used: [LineItem.revenue]
+      dimensions_used: [Region.name]
+
+  - id: aov_yearly
+    question: "Average order value by year"
+    cube_query:
+      measures: [Orders.avg_total_price]
+      timeDimensions:
+        - dimension: Orders.order_date
+          granularity: year
+    expected:
+      measures_used: [Orders.avg_total_price]
+
+  # ── Segments / filters ───────────────────────────────────────────────────
+
+  - id: returned_lineitems_by_ship_mode
+    question: "Returned line items by ship mode"
+    cube_query:
+      measures: [LineItem.count]
+      dimensions: [LineItem.ship_mode]
+      segments: [LineItem.returned]
+    expected:
+      measures_used: [LineItem.count]
+      dimensions_used: [LineItem.ship_mode]
+      segments_used: [LineItem.returned]
+
+  - id: late_rate_by_ship_mode
+    question: "What's the late delivery rate broken out by ship mode?"
+    cube_query:
+      measures: [LineItem.late_rate]
+      dimensions: [LineItem.ship_mode]
+    expected:
+      measures_used: [LineItem.late_rate]
+      dimensions_used: [LineItem.ship_mode]
+
+  - id: high_priority_order_count_yearly
+    question: "How many high-priority orders did we have each year?"
+    cube_query:
+      measures: [Orders.count]
+      segments: [Orders.high_priority]
+      timeDimensions:
+        - dimension: Orders.order_date
+          granularity: year
+    expected:
+      measures_used: [Orders.count]
+      segments_used: [Orders.high_priority]
+
+  - id: customers_in_debt_by_region
+    question: "How many customers are in debt, broken out by region?"
+    cube_query:
+      measures: [Customer.count]
+      segments: [Customer.in_debt]
+      dimensions: [Region.name]
+    expected:
+      measures_used: [Customer.count]
+      segments_used: [Customer.in_debt]
+      dimensions_used: [Region.name]
+
+  # ── Supply side (PartSupp) ───────────────────────────────────────────────
+
+  - id: total_inventory_value
+    question: "What's our total inventory value across all suppliers?"
+    cube_query:
+      measures: [PartSupp.total_inventory_value]
+    expected:
+      measures_used: [PartSupp.total_inventory_value]
+      expected_shape: big_number
+
+  - id: inventory_value_by_region
+    question: "Inventory value by region"
+    cube_query:
+      measures: [PartSupp.total_inventory_value]
+      dimensions: [Region.name]
+      order: { "PartSupp.total_inventory_value": "desc" }
+    expected:
+      measures_used: [PartSupp.total_inventory_value]
+      dimensions_used: [Region.name]
+
+  - id: avg_supply_cost_by_brand
+    question: "Average supply cost per brand"
+    cube_query:
+      measures: [PartSupp.avg_supply_cost]
+      dimensions: [Part.brand]
+      order: { "PartSupp.avg_supply_cost": "desc" }
+    expected:
+      measures_used: [PartSupp.avg_supply_cost]
+      dimensions_used: [Part.brand]
+
+  - id: supplier_count_by_nation
+    question: "Number of suppliers per nation"
+    cube_query:
+      measures: [Supplier.count]
+      dimensions: [Nation.name]
+      order: { "Supplier.count": "desc" }
+    expected:
+      measures_used: [Supplier.count]
+      dimensions_used: [Nation.name]
+
+  # ── Composition ──────────────────────────────────────────────────────────
+
+  - id: revenue_share_by_segment
+    question: "What share of revenue does each customer segment have?"
+    cube_query:
+      measures: [LineItem.revenue]
+      dimensions: [Customer.market_segment]
+    expected:
+      measures_used: [LineItem.revenue]
+      dimensions_used: [Customer.market_segment]
+      # ideal chart: donut (composition intent + ≤6 slices)
+
+  - id: order_status_breakdown
+    question: "Breakdown of orders by status"
+    cube_query:
+      measures: [Orders.count]
+      dimensions: [Orders.status]
+    expected:
+      measures_used: [Orders.count]
+      dimensions_used: [Orders.status]
+
+  # ── Two dimensions (heatmap-friendly) ────────────────────────────────────
+
+  - id: returns_by_ship_mode_x_priority
+    question: "Returned items broken out by ship mode and order priority"
+    cube_query:
+      measures: [LineItem.count]
+      dimensions: [LineItem.ship_mode, Orders.order_priority]
+      segments: [LineItem.returned]
+    expected:
+      measures_used: [LineItem.count]
+      dimensions_used: [LineItem.ship_mode, Orders.order_priority]
+      segments_used: [LineItem.returned]
+
+  # ── Relationship (scatter) ───────────────────────────────────────────────
+
+  - id: balance_vs_orders
+    question: "How does customer account balance relate to their order volume?"
+    cube_query:
+      measures: [Customer.avg_account_balance, Orders.count]
+      dimensions: [Customer.market_segment]
+    expected:
+      measures_used: [Customer.avg_account_balance, Orders.count]
+
+  # ── Specific filtered breakdowns ─────────────────────────────────────────
+
+  - id: revenue_air_shipping_by_region
+    question: "Revenue from air-shipped line items, by region"
+    cube_query:
+      measures: [LineItem.revenue]
+      dimensions: [Region.name]
+      segments: [LineItem.by_air]
+    expected:
+      measures_used: [LineItem.revenue]
+      dimensions_used: [Region.name]
+      segments_used: [LineItem.by_air]
+
+  - id: large_orders_count_by_priority
+    question: "How many large orders ($100K+) at each priority level?"
+    cube_query:
+      measures: [Orders.count]
+      dimensions: [Orders.order_priority]
+      segments: [Orders.large_orders]
+    expected:
+      measures_used: [Orders.count]
+      dimensions_used: [Orders.order_priority]
+      segments_used: [Orders.large_orders]
+
+  # ── Edge cases ───────────────────────────────────────────────────────────
+
+  - id: avg_supply_cost_global
+    question: "What's the average supply cost across our catalog?"
+    cube_query:
+      measures: [PartSupp.avg_supply_cost]
+    expected:
+      measures_used: [PartSupp.avg_supply_cost]
+      expected_shape: big_number
+
+  - id: late_count_recent
+    question: "How many late shipments did we have this year?"
+    cube_query:
+      measures: [LineItem.late_count]
+      timeDimensions:
+        - dimension: LineItem.ship_date
+          dateRange: "this year"
+    expected:
+      measures_used: [LineItem.late_count]

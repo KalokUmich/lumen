@@ -1,0 +1,29 @@
+cubes:
+  - name: Region
+    sql_table: main.region
+    description: |
+      Geographic regions (5 of them) used to group nations.
+      Top-level geography for sales reporting.
+    meta:
+      ai_facing: true
+      vertical: tpch
+      domain: geography
+
+    dimensions:
+      - name: key
+        sql: r_regionkey
+        type: number
+        primary_key: true
+      - name: name
+        sql: r_name
+        type: string
+        description: "Region name (AFRICA, AMERICA, ASIA, EUROPE, MIDDLE EAST)"
+        meta:
+          enum_values: [AFRICA, AMERICA, ASIA, EUROPE, "MIDDLE EAST"]
+          synonyms: [region, continent]
+
+    measures:
+      - name: count
+        sql: r_regionkey
+        type: count_distinct
+        description: "Number of regions"

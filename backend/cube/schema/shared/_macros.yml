@@ -1,0 +1,2 @@
+# Shared macro/utility cubes go here.
+# Empty for Phase 0; Phase 1 adds time_dim, geography_dim shared dimensions.

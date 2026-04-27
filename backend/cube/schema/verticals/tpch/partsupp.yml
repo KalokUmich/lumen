@@ -1,0 +1,86 @@
+cubes:
+  - name: PartSupp
+    sql_table: main.partsupp
+    description: |
+      Parts × Suppliers — supply-side economics. Each row records a supplier's
+      available quantity and supply cost for a part. Use it for supplier
+      sourcing analysis, inventory exposure, and supplier-cost comparisons.
+    meta:
+      ai_facing: true
+      vertical: tpch
+      domain: supply
+
+    joins:
+      - name: Part
+        sql: "{CUBE}.ps_partkey = {Part}.p_partkey"
+        relationship: many_to_one
+      - name: Supplier
+        sql: "{CUBE}.ps_suppkey = {Supplier}.s_suppkey"
+        relationship: many_to_one
+
+    dimensions:
+      - name: composite_key
+        sql: "CAST({CUBE}.ps_partkey AS VARCHAR) || '-' || CAST({CUBE}.ps_suppkey AS VARCHAR)"
+        type: string
+        primary_key: true
+      - name: available_quantity
+        sql: ps_availqty
+        type: number
+        description: "Units the supplier has available for this part"
+      - name: supply_cost
+        sql: ps_supplycost
+        type: number
+        description: "Cost per unit (USD)"
+
+    measures:
+      - name: count
+        sql: "ps_partkey || '-' || ps_suppkey"
+        type: count
+        description: "Number of part-supplier offerings"
+        meta:
+          synonyms: [offerings, sourcing options, num offerings]
+
+      - name: total_available_quantity
+        sql: ps_availqty
+        type: sum
+        description: "Sum of available units across all offerings"
+        meta:
+          synonyms: [total inventory, on-hand units, inventory volume]
+
+      - name: avg_supply_cost
+        sql: ps_supplycost
+        type: avg
+        format: currency
+        description: "Average supply cost per unit (USD)"
+        meta:
+          synonyms: [avg cost, mean supply cost]
+
+      - name: max_supply_cost
+        sql: ps_supplycost
+        type: max
+        format: currency
+        description: "Highest supply cost in the catalog"
+
+      - name: min_supply_cost
+        sql: ps_supplycost
+        type: min
+        format: currency
+        description: "Lowest supply cost in the catalog"
+
+      - name: total_inventory_value
+        sql: "{CUBE}.ps_availqty * {CUBE}.ps_supplycost"
+        type: sum
+        format: currency
+        description: |
+          Total dollar value of inventory currently on supplier shelves
+          (available_quantity × supply_cost summed).
+        meta:
+          synonyms: [inventory value, capital tied up, on-hand value]
+
+    segments:
+      - name: low_stock
+        sql: "{CUBE}.ps_availqty < 100"
+        description: "Offerings with fewer than 100 units available"
+      - name: expensive
+        sql: "{CUBE}.ps_supplycost > 500"
+        description: "Offerings priced above $500 per unit"

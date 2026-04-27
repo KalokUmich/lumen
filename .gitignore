@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.uv-cache/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+.npm/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Local config overrides (real secrets / local-only settings)
+config/settings.local.yaml
+config/secrets.local.yaml
+
+# Plan files for exploratory tasks
+.claude/plans/
+
+# Per-user Claude Code settings (everyone has their own permission allowlist)
+.claude/settings.local.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data
+*.duckdb
+*.duckdb.wal
+local_test/data/*.csv
+local_test/data/warehouse.duckdb*
+
+# Logs
+*.log
+logs/
+
+# Build
+build/
+*.egg
+
+# Cube
+cube/.cubestore/

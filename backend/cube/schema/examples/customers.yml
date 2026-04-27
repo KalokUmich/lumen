@@ -1,0 +1,60 @@
+cubes:
+  - name: Customers
+    sql_table: public.customers
+    description: |
+      One row per customer. Joined to Orders for purchase history analysis.
+    meta:
+      ai_facing: true
+      domain: sales
+
+    dimensions:
+      - name: id
+        sql: id
+        type: string
+        primary_key: true
+
+      - name: email
+        sql: email
+        type: string
+        description: "Customer email address (PII — only show to admins)."
+        meta:
+          pii: true
+
+      - name: signup_date
+        sql: created_at
+        type: time
+        description: "When the customer signed up."
+
+      - name: country
+        sql: country
+        type: string
+        description: "Customer's home country (ISO 2-letter code)."
+
+      - name: tier
+        sql: tier
+        type: string
+        description: "Loyalty tier."
+        meta:
+          enum_values: [free, silver, gold, platinum]
+
+    measures:
+      - name: count
+        sql: id
+        type: count_distinct
+        description: "Total unique customers."
+        meta:
+          synonyms: [customer_count, num_customers, total_customers]
+
+      - name: count_with_orders
+        sql: id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE.id} IN (SELECT customer_id FROM public.orders WHERE status='paid')"
+        description: "Customers who have at least one paid order."
+        meta:
+          synonyms: [active_customers, paying_customers, buyers]
+
+    segments:
+      - name: gold_or_platinum
+        sql: "{CUBE}.tier IN ('gold','platinum')"
+        description: "High-tier customers."

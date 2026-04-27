@@ -1,0 +1,21 @@
+# Local-only setting overrides.
+#
+# To use: copy this file to settings.local.yaml (which is gitignored)
+# and uncomment / change any fields you want to override locally.
+# Anything you don't override falls back to settings.yaml.
+#
+# Common local overrides:
+
+# llm:
+#   default_provider: anthropic   # use direct Anthropic API in dev
+#   providers:
+#     bedrock:
+#       enabled: false            # skip Bedrock health check if you don't have AWS
+#     alibaba:
+#       enabled: false
+
+# observability:
+#   log_level: DEBUG
+
+# features:
+#   enable_sql_workbench: true    # try in-progress features

@@ -1,0 +1,73 @@
+cubes:
+  - name: Subscriptions
+    sql_table: main.subscriptions
+    description: |
+      Active and historical subscription records. ONE record per
+      account-plan-period combination. The fundamental fact for ARR / MRR.
+    meta:
+      ai_facing: true
+      vertical: saas_finance
+      domain: revenue
+
+    joins:
+      - name: Accounts
+        sql: "{CUBE}.account_id = {Accounts}.id"
+        relationship: many_to_one
+
+    dimensions:
+      - name: id
+        sql: id
+        type: string
+        primary_key: true
+      - name: started_at
+        sql: started_at
+        type: time
+      - name: ended_at
+        sql: ended_at
+        type: time
+      - name: plan_tier
+        sql: plan_tier
+        type: string
+
+    measures:
+      - name: mrr
+        sql: monthly_amount_usd
+        type: sum
+        format: currency
+        description: |
+          Sum of monthly recurring revenue across active subscriptions.
+          The canonical SaaS revenue metric.
+        meta:
+          synonyms: [monthly recurring revenue, monthly revenue, mrr total]
+          example_questions:
+            - "What's our MRR?"
+            - "MRR by plan tier"
+            - "MRR trend by month"
+
+      - name: arr
+        sql: "monthly_amount_usd * 12"
+        type: sum
+        format: currency
+        description: "Annualized recurring revenue (mrr × 12)."
+        meta:
+          synonyms: [annualized recurring revenue, annual recurring revenue, run rate]
+
+      - name: avg_contract_value
+        sql: "monthly_amount_usd * 12"
+        type: avg
+        format: currency
+        description: "Average annual contract value across active subs"
+        meta:
+          synonyms: [acv, average contract value]
+
+      - name: count
+        sql: id
+        type: count_distinct
+
+    segments:
+      - name: active
+        sql: "{CUBE}.ended_at IS NULL OR {CUBE}.ended_at > CURRENT_DATE"
+        description: "Currently-active subscriptions"
+      - name: ended
+        sql: "{CUBE}.ended_at IS NOT NULL AND {CUBE}.ended_at <= CURRENT_DATE"
+        description: "Subscriptions that have ended"
