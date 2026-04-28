@@ -27,39 +27,38 @@ install:
 		fastapi 'uvicorn[standard]' sse-starlette \
 		httpx pydantic pydantic-settings \
 		asyncpg sqlalchemy aiosqlite \
-		'anthropic[bedrock]' \
+		'anthropic[bedrock]' openai \
 		pyjwt structlog tenacity \
 		duckdb pyyaml redis \
 		pytest pytest-asyncio
 	@echo "✓ backend env ready"
+	@echo "  python: $$($(PY) --version)"
+	@echo "  packages: $$($(PIP) list --format=freeze | wc -l)"
 
-seed: seed-tpch
+seed: seed-lending
 
-seed-tpch:
-	PYTHONPATH=. $(PY) local_test/seed_tpch.py --sf 0.1
+seed-lending:
+	PYTHONPATH=. $(PY) local_test/seed_lending.py --scale 1.0
 
-seed-orders:
-	PYTHONPATH=. $(PY) -m local_test.seed_duckdb
+seed-lending-small:
+	PYTHONPATH=. $(PY) local_test/seed_lending.py --scale 0.05
 
 smoke:
-	PYTHONPATH=backend:. $(PY) local_test/run_local_test.py --mock --vertical tpch
-
-smoke-orders:
-	PYTHONPATH=backend:. $(PY) local_test/run_local_test.py --mock --vertical orders
+	PYTHONPATH=backend:. $(PY) local_test/run_local_test.py --mock --vertical lending
 
 # Launch all 4 backend services in the background. Logs to /tmp/lumen-*.log.
 backend:
 	@mkdir -p /tmp/lumen-logs
-	@LUMEN_QUERY_BACKEND=duckdb_tpch \
-	 LUMEN_DEFAULT_VERTICAL=tpch \
+	@LUMEN_QUERY_BACKEND=duckdb_lending \
+	 LUMEN_DEFAULT_VERTICAL=lending \
 	 JWT_SIGNING_KEY=local-dev-only \
 	 PYTHONPATH=backend $(PY) -m uvicorn services.workspace_service.main:app --port 8004 --log-level warning >/tmp/lumen-logs/workspace.log 2>&1 &
-	@LUMEN_QUERY_BACKEND=duckdb_tpch \
+	@LUMEN_QUERY_BACKEND=duckdb_lending \
 	 JWT_SIGNING_KEY=local-dev-only \
 	 WORKSPACE_SERVICE_URL=http://localhost:8004 \
 	 PYTHONPATH=backend $(PY) -m uvicorn services.query_service.main:app --port 8002 --log-level warning >/tmp/lumen-logs/query.log 2>&1 &
 	@JWT_SIGNING_KEY=local-dev-only \
-	 LUMEN_DEFAULT_VERTICAL=tpch \
+	 LUMEN_DEFAULT_VERTICAL=lending \
 	 USE_MOCK_LLM=$${USE_MOCK_LLM:-true} \
 	 WORKSPACE_SERVICE_URL=http://localhost:8004 \
 	 QUERY_SERVICE_URL=http://localhost:8002 \

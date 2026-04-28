@@ -45,11 +45,46 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Omni API Gateway", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Generic request-audit middleware (Phase 1 M8 — every authenticated request
+# emits a structured audit line, in addition to the action-specific calls
+# inside individual handlers).
+@app.middleware("http")
+async def request_audit_middleware(request: Any, call_next: Any) -> Any:
+    import time as _t
+    start = _t.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = round((_t.perf_counter() - start) * 1000, 1)
+    # Skip cosmetic noise: CORS preflight, /health, static assets.
+    path = str(request.url.path)
+    method = request.method
+    if method == "OPTIONS" or path in ("/health", "/healthz") or path.startswith("/static"):
+        return response
+    auth = request.headers.get("authorization", "")
+    actor = "anonymous"
+    workspace = "-"
+    if auth.startswith("Bearer dev:"):
+        parts = auth.removeprefix("Bearer dev:").split(":")
+        if len(parts) >= 3:
+            actor = parts[0]
+            workspace = parts[1]
+    try:
+        audit.emit(
+            actor_user_id=actor,
+            workspace_id=workspace,
+            action=f"{method} {path}",
+            resource_type="http_request",
+            metadata={"status": response.status_code, "ms": elapsed_ms},
+        )
+    except Exception:
+        pass  # never let auditing break a request
+    return response
 
 
 # ----- Auth dependency (placeholder: will use OIDC in Phase 1, sprint 8) -----
@@ -228,3 +263,96 @@ async def create_workbook(
 @app.get("/api/v1/providers")
 async def providers(_ctx: WorkspaceContext = Depends(current_user)) -> Any:
     return await _proxy_get(f"{AI_SERVICE_URL}/providers")
+
+
+# ── Chat session persistence (proxied to workspace_service) ──────────────────
+
+
+@app.get("/api/v1/chat/sessions")
+async def list_chat_sessions(
+    workspace_id: str,
+    _ctx: WorkspaceContext = Depends(current_user),
+) -> Any:
+    return await _proxy_get(f"{WORKSPACE_SERVICE_URL}/chat/sessions?workspace_id={workspace_id}")
+
+
+@app.post("/api/v1/chat/sessions")
+async def create_chat_session(
+    body: dict[str, Any] = Body(...),
+    _ctx: WorkspaceContext = Depends(current_user),
+) -> Any:
+    return await _proxy_post(f"{WORKSPACE_SERVICE_URL}/chat/sessions", body)
+
+
+@app.get("/api/v1/chat/sessions/{session_id}/messages")
+async def list_chat_messages(
+    session_id: str,
+    _ctx: WorkspaceContext = Depends(current_user),
+) -> Any:
+    return await _proxy_get(f"{WORKSPACE_SERVICE_URL}/chat/sessions/{session_id}/messages")
+
+
+@app.post("/api/v1/chat/sessions/{session_id}/messages")
+async def append_chat_message(
+    session_id: str,
+    body: dict[str, Any] = Body(...),
+    _ctx: WorkspaceContext = Depends(current_user),
+) -> Any:
+    return await _proxy_post(f"{WORKSPACE_SERVICE_URL}/chat/sessions/{session_id}/messages", body)
+
+
+@app.delete("/api/v1/chat/sessions/{session_id}")
+async def delete_chat_session(
+    session_id: str,
+    _ctx: WorkspaceContext = Depends(current_user),
+) -> Any:
+    r = await app.state.http.delete(f"{WORKSPACE_SERVICE_URL}/chat/sessions/{session_id}")
+    r.raise_for_status()
+    return r.json()
+
+
+# ── Model editor (proxied to workspace_service) ──────────────────────────────
+
+
+@app.get("/api/v1/model/files")
+async def list_model_files(_ctx: WorkspaceContext = Depends(current_user)) -> Any:
+    return await _proxy_get(f"{WORKSPACE_SERVICE_URL}/model/files")
+
+
+@app.get("/api/v1/model/files/{path:path}")
+async def get_model_file(path: str, _ctx: WorkspaceContext = Depends(current_user)) -> Any:
+    return await _proxy_get(f"{WORKSPACE_SERVICE_URL}/model/files/{path}")
+
+
+@app.put("/api/v1/model/files/{path:path}")
+async def save_model_file(
+    path: str,
+    body: dict[str, Any] = Body(...),
+    ctx: WorkspaceContext = Depends(current_user),
+) -> Any:
+    audit.emit(
+        actor_user_id=ctx.user_id,
+        workspace_id=ctx.workspace_id,
+        action="model.save",
+        resource_type="model_file",
+        metadata={"path": path},
+    )
+    r = await app.state.http.put(f"{WORKSPACE_SERVICE_URL}/model/files/{path}", json=body)
+    r.raise_for_status()
+    return r.json()
+
+
+@app.post("/api/v1/model/validate")
+async def validate_model(
+    body: dict[str, Any] = Body(...),
+    _ctx: WorkspaceContext = Depends(current_user),
+) -> Any:
+    return await _proxy_post(f"{WORKSPACE_SERVICE_URL}/model/validate", body)
+
+
+@app.get("/api/v1/model/locate")
+async def locate_member(
+    member: str,
+    _ctx: WorkspaceContext = Depends(current_user),
+) -> Any:
+    return await _proxy_get(f"{WORKSPACE_SERVICE_URL}/model/locate?member={member}")

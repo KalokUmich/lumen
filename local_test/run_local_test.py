@@ -95,7 +95,50 @@ SMOKE_QUESTIONS_ORDERS: list[dict[str, Any]] = [
 ]
 
 
-VERTICALS = {"tpch": SMOKE_QUESTIONS_TPCH, "orders": SMOKE_QUESTIONS_ORDERS}
+SMOKE_QUESTIONS_LENDING: list[dict[str, Any]] = [
+    {
+        "question": "What's our total origination volume?",
+        "expects": {"measures_subset": ["Loan.total_originated"], "must_succeed": True},
+    },
+    {
+        "question": "Default rate by grade",
+        "expects": {
+            "measures_subset": ["Loan.default_rate"],
+            "dimensions_subset": ["Loan.grade"],
+            "must_succeed": True,
+        },
+    },
+    {
+        "question": "Approval rate by application product type",
+        "expects": {
+            "measures_subset": ["Application.approval_rate"],
+            "dimensions_subset": ["Application.product_type"],
+            "must_succeed": True,
+        },
+    },
+    {
+        "question": "Origination volume trend by month last year",
+        "expects": {
+            "measures_subset": ["Loan.total_originated"],
+            "must_succeed": True,
+        },
+    },
+    {
+        "question": "Top 5 branches by origination volume",
+        "expects": {
+            "measures_subset": ["Loan.total_originated"],
+            "dimensions_subset": ["Branch.name"],
+            "must_succeed": True,
+        },
+    },
+]
+
+
+VERTICALS = {
+    "tpch": SMOKE_QUESTIONS_TPCH,
+    "orders": SMOKE_QUESTIONS_ORDERS,
+    "lending": SMOKE_QUESTIONS_LENDING,
+}
 
 
 # ── Environment + data checks ─────────────────────────────────────────────────
@@ -111,6 +154,9 @@ def _set_dev_env(args: argparse.Namespace) -> None:
     if args.vertical == "tpch":
         os.environ["LOCAL_SCHEMA_SUMMARY_PATH"] = str(data_dir / "tpch_schema_summary.txt")
         os.environ["LOCAL_GLOSSARY_PATH"] = str(data_dir / "tpch_glossary.md")
+    elif args.vertical == "lending":
+        os.environ["LOCAL_SCHEMA_SUMMARY_PATH"] = str(data_dir / "lending_schema_summary.txt")
+        os.environ["LOCAL_GLOSSARY_PATH"] = str(data_dir / "lending_glossary.md")
     else:
         os.environ["LOCAL_SCHEMA_SUMMARY_PATH"] = str(data_dir / "schema_summary.txt")
         os.environ["LOCAL_GLOSSARY_PATH"] = str(data_dir / "glossary.md")
@@ -121,6 +167,11 @@ def _check_seed_data(args: argparse.Namespace) -> None:
         db = Path(os.environ.get("LOCAL_TPCH_DUCKDB_PATH", Path(__file__).parent / "data" / "tpch.duckdb"))
         if not db.exists():
             print("⚠ TPC-H seed data missing. Run:  python local_test/seed_tpch.py")
+            sys.exit(2)
+    elif args.vertical == "lending":
+        db = Path(os.environ.get("LOCAL_LENDING_DUCKDB_PATH", Path(__file__).parent / "data" / "lending.duckdb"))
+        if not db.exists():
+            print("⚠ Lending seed data missing. Run:  make seed-lending")
             sys.exit(2)
     else:
         db = Path(os.environ.get("LOCAL_DUCKDB_PATH", Path(__file__).parent / "data" / "warehouse.duckdb"))
@@ -141,6 +192,8 @@ async def run_one(question: str, expects: dict[str, Any], vertical: str) -> dict
 
     if vertical == "tpch":
         from local_test import duckdb_query_runner_tpch as qr
+    elif vertical == "lending":
+        from local_test import duckdb_query_runner_lending as qr
     else:
         from local_test import duckdb_query_runner as qr
 

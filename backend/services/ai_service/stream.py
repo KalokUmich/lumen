@@ -14,7 +14,7 @@ from shared.auth import WorkspaceContext
 from shared.errors import MaxAIHopsExceeded
 from shared.llm_providers import LLMProvider, StreamEvent
 
-from . import cube_runner, visualizer
+from . import cube_runner, query_critic, visualizer
 from .prompts import few_shot, system as system_prompt
 from .routing import route_text_to_query
 from .schemas import CubeQuery, FinalAnswerInput, tool_definitions
@@ -107,6 +107,18 @@ async def respond(
                 "cache_read": usage.cache_read_input_tokens,
                 "cache_create": usage.cache_creation_input_tokens,
             })
+            # Aggregate into the registry's token stats for /providers reporting.
+            try:
+                from shared.llm_providers import get_registry as _reg
+                _reg().record_usage(
+                    provider.name,
+                    input_tokens=usage.input_tokens or 0,
+                    output_tokens=usage.output_tokens or 0,
+                    cache_read=usage.cache_read_input_tokens or 0,
+                    cache_create=usage.cache_creation_input_tokens or 0,
+                )
+            except Exception:
+                pass  # never let metric collection break the loop
 
         if stop_reason != "tool_use" or not tool_calls:
             # Model decided to stop without final_answer — yield whatever text we have.
@@ -148,6 +160,21 @@ async def respond(
                         "type": "tool_result",
                         "tool_use_id": tc.tool_use_id,
                         "content": err,
+                        "is_error": True,
+                    })
+                    continue
+
+                # Pre-execution critic: catch query-shape mismatches the
+                # warehouse can't (B1: relative-time phrase but no dateRange).
+                critique = query_critic.critique_query(
+                    question, validated.model_dump(exclude_none=True)
+                )
+                if critique:
+                    yield SSEEvent("tool_result", {"error": critique})
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.tool_use_id,
+                        "content": critique,
                         "is_error": True,
                     })
                     continue

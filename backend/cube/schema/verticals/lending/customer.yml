@@ -1,0 +1,146 @@
+cubes:
+  - name: Customer
+    sql_table: main.customers
+    description: |
+      Borrowers and applicants. The unit of analysis for cohort, demographic,
+      and credit-tier studies. One row per natural person.
+    meta:
+      ai_facing: true
+      vertical: lending
+      domain: customer
+
+    dimensions:
+      - name: id
+        sql: customer_id
+        type: number
+        primary_key: true
+      - name: code
+        sql: customer_code
+        type: string
+        description: "Display-friendly external customer code (CUSTxxxxxxxxx)"
+      - name: full_name
+        sql: full_name
+        type: string
+      - name: state
+        sql: state
+        type: string
+        description: "US state (2-letter code) of residence"
+        meta:
+          synonyms: [state, region, geo, location]
+          sample_values: [CA, TX, NY, FL, IL, PA, OH, GA, NC, MI]
+      - name: employment_type
+        sql: employment_type
+        type: string
+        description: "Employment classification at time of signup"
+        meta:
+          enum_values: [Salaried, Self-employed, Hourly, Retired, Contractor, Unemployed]
+          synonyms: [employment, job type, employment status]
+      - name: annual_income
+        sql: annual_income
+        type: number
+        description: "Self-reported annual income (USD) at signup"
+        meta:
+          format: currency
+          synonyms: [income, salary, earnings]
+      - name: fico_score
+        sql: fico_score
+        type: number
+        description: "FICO credit score (300-850) at signup"
+        meta:
+          synonyms: [fico, credit score, score]
+          sample_values: [550, 620, 680, 720, 760, 800]
+      - name: credit_tier
+        sql: credit_tier
+        type: string
+        description: "Bucketed FICO band: Prime / Near-prime / Sub-prime / Deep sub-prime"
+        meta:
+          enum_values: [Prime, Near-prime, Sub-prime, Deep sub-prime]
+          synonyms: [tier, credit tier, risk tier, risk band, credit band]
+          ai_hint: "Use this when the user says 'risk band' or 'credit segment'"
+      - name: acquisition_channel
+        sql: acquisition_channel
+        type: string
+        description: "How the customer found us"
+        meta:
+          enum_values: [Web, Mobile App, Branch, Phone, Partner Referral]
+          synonyms: [channel, acquisition, source, referral source]
+      - name: is_homeowner
+        sql: is_homeowner
+        type: boolean
+        description: "Whether the customer owns their home"
+      - name: signup_cohort_year
+        sql: signup_cohort_year
+        type: number
+        description: "Year the customer first signed up (for cohort analysis)"
+      - name: signup_date
+        sql: signup_date
+        type: time
+        description: "Date the customer was acquired"
+        granularities:
+          - {name: day,     interval: 1 day}
+          - {name: week,    interval: 1 week}
+          - {name: month,   interval: 1 month}
+          - {name: quarter, interval: 1 quarter}
+          - {name: year,    interval: 1 year}
+      - name: date_of_birth
+        sql: date_of_birth
+        type: time
+        description: "Date of birth"
+
+    measures:
+      - name: count
+        sql: customer_id
+        type: count_distinct
+        description: "Number of unique customers"
+        meta:
+          synonyms: [customers, num customers, customer count, borrowers]
+          example_questions:
+            - "How many customers do we have?"
+            - "Customer count by state"
+            - "New customers this quarter"
+      - name: avg_fico
+        sql: fico_score
+        type: avg
+        description: "Average FICO score across customers"
+        meta:
+          synonyms: [average fico, mean fico, average credit score]
+      - name: avg_annual_income
+        sql: annual_income
+        type: avg
+        format: currency
+        description: "Average self-reported annual income (USD)"
+      - name: median_annual_income
+        sql: "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY annual_income)"
+        type: number
+        format: currency
+        description: "Median annual income (USD)"
+      - name: prime_count
+        sql: customer_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.credit_tier = 'Prime'"
+        description: "Count of Prime-tier customers"
+      - name: subprime_count
+        sql: customer_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.credit_tier IN ('Sub-prime','Deep sub-prime')"
+        description: "Count of sub-prime customers (FICO < 670)"
+      - name: homeowner_rate
+        sql: "AVG(CASE WHEN {CUBE}.is_homeowner THEN 1.0 ELSE 0 END)"
+        type: number
+        format: percent
+        description: "Share of customers who own a home"
+        meta:
+          ai_hint: "Already a ratio (0-1); render as percentage."
+
+    segments:
+      - name: prime
+        sql: "{CUBE}.credit_tier = 'Prime'"
+        description: "FICO ≥ 740 customers"
+      - name: subprime
+        sql: "{CUBE}.credit_tier IN ('Sub-prime','Deep sub-prime')"
+        description: "FICO < 670 customers"
+      - name: high_income
+        sql: "{CUBE}.annual_income >= 150000"
+        description: "Customers earning $150k+/year"

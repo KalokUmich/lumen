@@ -1,0 +1,43 @@
+# Agent Skills (§22 Sprint A) — named multi-step recipes the agent surfaces
+# as quick-action buttons. Mirrors Omni's docs.omni.co/ai/skills.
+#
+# Each skill renders as a button in the chat EmptyState. Clicking sends the
+# `prompt` (or `prompt + " " + user_input` if `input` is true) into the chat.
+# `description` shows up in tooltip + appears in the system prompt so the AI
+# knows the skill exists when picking tools.
+
+skills:
+  - name: weekly_origination_pulse
+    label: "Weekly origination pulse"
+    description: |
+      Summarise origination volume + count for the past 8 weeks, broken down
+      by grade and product type, and highlight any week that's >2σ off the
+      8-week mean.
+    prompt: "Give me a weekly origination pulse — total funded amount and loan count over the last 8 weeks, by grade. Flag any week that's an outlier (>2σ from the rolling mean)."
+
+  - name: portfolio_health_snapshot
+    label: "Portfolio health snapshot"
+    description: |
+      End-of-week portfolio health: default rate, delinquency rate, recovery
+      rate, weighted average APR, with grade-level breakdown.
+    prompt: "Give me a portfolio health snapshot for this quarter: default rate, delinquency rate, recovery rate, and weighted average APR — broken down by grade."
+
+  - name: top_decline_reasons
+    label: "Why are we declining?"
+    description: "Top decline reasons over the past 30 days, by product type."
+    prompt: "What are the top decline reasons over the past 30 days, broken down by product type?"
+
+  - name: branch_leaderboard
+    label: "Branch leaderboard"
+    description: "Top branches by origination volume this quarter."
+    prompt: "Show me the top 10 branches by origination volume this quarter, with their default rate."
+
+  - name: cohort_default_curve
+    label: "Cohort default curve"
+    description: "How vintages perform — default rate by signup cohort year."
+    prompt: "Show default rate by signup cohort year — does the 2024 cohort look better or worse than 2023?"
+
+  - name: collections_recovery_funnel
+    label: "Collections recovery funnel"
+    description: "Recovery rate by collection channel — Internal vs External Agency vs Legal vs Sold."
+    prompt: "Recovery rate by collection channel for cases opened this year. Which channel recovers the most per dollar charged off?"

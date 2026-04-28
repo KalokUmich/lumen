@@ -44,6 +44,39 @@ When answering, you MUST follow these rules:
 
 8. Do not hallucinate values. If you do not know a literal value (e.g. a country
    code, a status string), use `ask_clarification` rather than guessing.
+
+9. TIME FILTERING (mandatory): when the user's question contains a *relative*
+   time phrase — "last N days/weeks/months/quarters/years", "this/current
+   month/quarter/year", "MTD", "YTD", "QTD", "WTD", "year-over-year", "since
+   <date>", "over the past few weeks", etc. — you MUST express it as a
+   `timeDimensions` entry with a `dateRange` string, NOT as a free-text
+   `filters` clause and NOT by leaving the time filter out entirely.
+
+   Correct:
+     timeDimensions: [
+       {dimension: Orders.order_date, dateRange: "last 3 months", granularity: month}
+     ]
+   Wrong (no filter — returns all-time data):
+     timeDimensions: [{dimension: Orders.order_date, granularity: month}]
+   Wrong (filter on date column instead of dateRange):
+     filters: [{member: Orders.order_date, operator: afterDate, values: ["2026-01-01"]}]
+
+   Granularity guidance: ≤14 days → day, ≤90 days → week, ≤2 years → month,
+   beyond that → quarter or year. Pick the time dimension that fits the
+   measure (Orders.order_date for order counts, LineItem.ship_date for
+   shipped revenue).
+
+10. ROUTING (Cube vs. Pandas, when run_dataframe_transform is enabled):
+   - Default to `run_cube_query`. It handles aggregation, group-by, filtering,
+     joins, time-series, top-N, and ratios declared as measures.
+   - Only reach for `run_dataframe_transform` when the question requires a
+     rolling window, cohort/retention matrix, reshape (pivot/melt), non-trivial
+     statistics (z-score, correlation, regression), or multi-source DataFrame
+     ops the schema doesn't model.
+   - "Top customers", "revenue by region", "filter to amount > 100", "last
+     year's revenue" — these are NOT Pandas. Use `run_cube_query`.
+   - When unsure, prefer `run_cube_query` and accept a less polished answer
+     over an unbounded Python escape hatch.
 """
 
 

@@ -27,6 +27,9 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "local_test" / "data"
 def _load_cube_files(vertical_dir: Path) -> list[dict[str, Any]]:
     cubes: list[dict[str, Any]] = []
     for path in sorted(vertical_dir.glob("*.yml")):
+        # `skills.yml` is a sibling config file, not a cube definition.
+        if path.name == "skills.yml":
+            continue
         data = yaml.safe_load(path.read_text())
         if not data:
             continue
@@ -35,20 +38,51 @@ def _load_cube_files(vertical_dir: Path) -> list[dict[str, Any]]:
     return cubes
 
 
+def _load_skills(vertical_dir: Path) -> list[dict[str, Any]]:
+    """Load Agent Skills (§22 Sprint A — named recipe buttons).
+
+    Reads `<vertical>/skills.yml` if present. Returns the list verbatim so
+    the frontend can render names + labels + descriptions, and the AI prompt
+    builder can list them as available recipes.
+    """
+    skills_path = vertical_dir / "skills.yml"
+    if not skills_path.exists():
+        return []
+    data = yaml.safe_load(skills_path.read_text()) or {}
+    skills = data.get("skills") or []
+    # Defensive: drop any entry without a name + prompt.
+    return [s for s in skills if s.get("name") and s.get("prompt")]
+
+
 def _format_meta(meta: dict[str, Any]) -> str:
+    """Render the AI-grounding metadata that goes inline next to each
+    dim/measure in the schema_summary the LLM sees.
+    Order matters: most-discriminating first (ai_hint, enum_values), then
+    softer hints (synonyms, sample_values), then example_questions.
+    """
     parts = []
-    if meta.get("synonyms"):
-        parts.append(f"synonyms: {meta['synonyms']}")
+    if meta.get("ai_hint") or meta.get("ai_context"):
+        # Omni's verbatim term is `ai_context`; we accept either spelling.
+        hint = meta.get("ai_context") or meta.get("ai_hint")
+        parts.append(f"ai_context: \"{hint}\"")
     if meta.get("enum_values"):
         parts.append(f"enum_values: {meta['enum_values']}")
-    if meta.get("ai_hint"):
-        parts.append(f"ai_hint: \"{meta['ai_hint']}\"")
+    if meta.get("synonyms"):
+        parts.append(f"synonyms: {meta['synonyms']}")
+    if meta.get("sample_values"):
+        # Up to 8 representative values to ground the AI in the field's shape.
+        sv = meta["sample_values"][:8]
+        parts.append(f"sample_values: {sv}")
     if meta.get("example_questions"):
         parts.append(f"examples: {meta['example_questions']}")
     return "; ".join(parts)
 
 
-def _render_summary(cubes: list[dict[str, Any]], vertical: str) -> str:
+def _render_summary(
+    cubes: list[dict[str, Any]],
+    vertical: str,
+    skills: list[dict[str, Any]] | None = None,
+) -> str:
     lines: list[str] = [f"# Cube Semantic Model — {vertical} vertical", ""]
     for cube in cubes:
         name = cube["name"]
@@ -95,6 +129,17 @@ def _render_summary(cubes: list[dict[str, Any]], vertical: str) -> str:
                 lines.append(f"- → {j['name']} ({j.get('relationship','many_to_one')})")
 
         lines.append("")
+
+    if skills:
+        lines.append("# Agent Skills (named recipes the user can invoke)")
+        lines.append("")
+        for s in skills:
+            label = s.get("label") or s["name"]
+            desc = (s.get("description") or "").strip().replace("\n", " ")
+            lines.append(f"- **{label}** (`{s['name']}`)")
+            if desc:
+                lines.append(f"  {desc}")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -125,12 +170,15 @@ def get_bundle(vertical: str) -> dict[str, Any]:
             "schema_summary": f"# Unknown vertical: {vertical}",
             "glossary": "",
             "metadata": {},
+            "skills": [],
         }
     cubes = _load_cube_files(vertical_dir)
+    skills = _load_skills(vertical_dir)
     return {
-        "schema_summary": _render_summary(cubes, vertical),
+        "schema_summary": _render_summary(cubes, vertical, skills),
         "glossary": _read_glossary(vertical),
         "metadata": _extract_metadata(cubes),
+        "skills": skills,
     }
 
 
@@ -149,8 +197,9 @@ def _extract_metadata(cubes: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
                 "label": meta.get("label") or _humanize(d["name"]),
                 "description": d.get("description"),
                 "synonyms": meta.get("synonyms", []),
-                "ai_hint": meta.get("ai_hint"),
+                "ai_hint": meta.get("ai_context") or meta.get("ai_hint"),
                 "enum_values": meta.get("enum_values"),
+                "sample_values": meta.get("sample_values", []),
                 "format": meta.get("format"),
             }
 

@@ -1,0 +1,198 @@
+cubes:
+  - name: Loan
+    sql_table: main.loans
+    description: |
+      Funded loans. The core fact table for the lending business —
+      origination volume, performance, and risk metrics all live here.
+      Each loan has one customer, one branch, one officer.
+    meta:
+      ai_facing: true
+      vertical: lending
+      domain: origination
+
+    joins:
+      - name: Customer
+        sql: "{CUBE}.customer_id = {Customer}.customer_id"
+        relationship: many_to_one
+      - name: Branch
+        sql: "{CUBE}.branch_id = {Branch}.branch_id"
+        relationship: many_to_one
+      - name: LoanOfficer
+        sql: "{CUBE}.officer_id = {LoanOfficer}.officer_id"
+        relationship: many_to_one
+      - name: Application
+        sql: "{CUBE}.application_id = {Application}.application_id"
+        relationship: one_to_one
+
+    dimensions:
+      - name: id
+        sql: loan_id
+        type: number
+        primary_key: true
+      - name: code
+        sql: loan_code
+        type: string
+      - name: customer_id
+        sql: customer_id
+        type: number
+      - name: branch_id
+        sql: branch_id
+        type: number
+      - name: officer_id
+        sql: officer_id
+        type: number
+      - name: application_id
+        sql: application_id
+        type: number
+      - name: product_type
+        sql: product_type
+        type: string
+        description: "Loan product type"
+        meta:
+          enum_values: [Personal Loan, Auto Loan, Home Improvement, Debt Consolidation]
+          synonyms: [product, product type, loan type]
+      - name: grade
+        sql: grade
+        type: string
+        description: "Risk grade A (best) → G (worst), assigned at origination"
+        meta:
+          enum_values: [A, B, C, D, E, F, G]
+          synonyms: [grade, risk grade, credit grade]
+          ai_hint: "Lower letters are higher quality. A is prime."
+      - name: subgrade
+        sql: subgrade
+        type: string
+        description: "Sub-grade combining letter grade with 1-5 sub-tier"
+      - name: purpose
+        sql: purpose
+        type: string
+        description: "Stated use of loan proceeds"
+        meta:
+          enum_values: [Debt consolidation, Credit card refinance, Home improvement, Major purchase, Medical, Other]
+          synonyms: [purpose, reason, use of funds]
+      - name: status
+        sql: status
+        type: string
+        description: "Current servicing status of the loan"
+        meta:
+          enum_values: [current, paid_off, late_31_120, default, charged_off]
+          synonyms: [status, loan status, servicing status]
+          ai_hint: "current+paid_off are good; late/default/charged_off are delinquent"
+      - name: term_months
+        sql: term_months
+        type: number
+        description: "Loan term in months"
+      - name: loan_amount
+        sql: loan_amount
+        type: number
+        format: currency
+        description: "Funded loan principal (USD)"
+      - name: interest_rate_pct
+        sql: interest_rate_pct
+        type: number
+        description: "Stated APR as a percentage (e.g. 12.500 for 12.5%)"
+        meta:
+          synonyms: [interest rate, apr, rate, coupon]
+      - name: origination_date
+        sql: origination_date
+        type: time
+        description: "Date the loan was funded"
+        granularities:
+          - {name: day, interval: 1 day}
+          - {name: week, interval: 1 week}
+          - {name: month, interval: 1 month}
+          - {name: quarter, interval: 1 quarter}
+          - {name: year, interval: 1 year}
+
+    measures:
+      - name: count
+        sql: loan_id
+        type: count_distinct
+        description: "Number of funded loans"
+        meta:
+          synonyms: [loans, num loans, loan count, originations]
+          example_questions:
+            - "How many loans did we originate last quarter?"
+            - "Loan count by grade"
+      - name: total_originated
+        sql: loan_amount
+        type: sum
+        format: currency
+        description: "Total loan principal originated (USD)"
+        meta:
+          synonyms: [originations, origination volume, funded amount, total funded, principal]
+          example_questions:
+            - "What was our origination volume last month?"
+            - "Total loans funded by branch"
+      - name: avg_loan_amount
+        sql: loan_amount
+        type: avg
+        format: currency
+        description: "Average funded loan size (USD)"
+        meta:
+          synonyms: [average loan, avg loan size, mean loan]
+      - name: avg_interest_rate
+        sql: interest_rate_pct
+        type: avg
+        description: "Average APR (percent)"
+        meta:
+          synonyms: [average rate, avg apr, weighted rate]
+      - name: weighted_avg_rate
+        sql: "SUM({CUBE}.interest_rate_pct * {CUBE}.loan_amount) / NULLIF(SUM({CUBE}.loan_amount), 0)"
+        type: number
+        description: "Loan-amount-weighted average APR (percent)"
+        meta:
+          synonyms: [WAC, weighted average coupon, blended rate]
+      - name: default_count
+        sql: loan_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status IN ('default','charged_off')"
+        description: "Loans in default or charged off"
+      - name: default_rate
+        sql: "AVG(CASE WHEN {CUBE}.status IN ('default','charged_off') THEN 1.0 ELSE 0 END)"
+        type: number
+        format: percent
+        description: "Share of loans in default or charged off (0-1)"
+        meta:
+          synonyms: [default rate, charge-off rate, loss rate, bad rate]
+          example_questions:
+            - "What's our default rate?"
+            - "Default rate by grade"
+            - "Default rate trend by month"
+      - name: delinquency_rate
+        sql: "AVG(CASE WHEN {CUBE}.status IN ('late_31_120','default','charged_off') THEN 1.0 ELSE 0 END)"
+        type: number
+        format: percent
+        description: "Share of loans 31+ days delinquent (0-1)"
+        meta:
+          synonyms: [delinquency, dq rate, past due rate]
+      - name: paid_off_count
+        sql: loan_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status = 'paid_off'"
+        description: "Number of loans fully paid off"
+      - name: charged_off_amount
+        sql: loan_amount
+        type: sum
+        format: currency
+        filters:
+          - sql: "{CUBE}.status = 'charged_off'"
+        description: "Total principal charged off (USD)"
+        meta:
+          synonyms: [losses, write-offs, charge-offs]
+
+    segments:
+      - name: prime_grade
+        sql: "{CUBE}.grade IN ('A','B')"
+        description: "Loans graded A or B"
+      - name: subprime_grade
+        sql: "{CUBE}.grade IN ('E','F','G')"
+        description: "Loans graded E, F, or G"
+      - name: delinquent
+        sql: "{CUBE}.status IN ('late_31_120','default','charged_off')"
+        description: "Loans 31+ days past due"
+      - name: performing
+        sql: "{CUBE}.status IN ('current','paid_off')"
+        description: "Loans current or paid off"

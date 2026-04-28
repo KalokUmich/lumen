@@ -51,7 +51,7 @@ llm:
     alibaba:
       enabled: true
       # International endpoint; switch to the China endpoint as needed.
-      base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
       tiers:
         strong: qwen-max
         medium: qwen-plus

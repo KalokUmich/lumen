@@ -31,6 +31,50 @@ from .base import (
 # concept's member fragments.
 
 _MEASURE_CONCEPTS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+    # ── Lending vertical (most specific phrases first) ──
+    (("default rate", "charge-off rate", "loss rate", "bad rate"),
+     ("default_rate",)),
+    (("delinquency", "delinquency rate", "dq rate", "past due rate"),
+     ("delinquency_rate",)),
+    (("approval rate", "approval %", "approval ratio", "approve rate"),
+     ("approval_rate",)),
+    (("late payment rate", "late rate"),
+     ("late_payment_rate",)),
+    (("recovery rate", "recovery %"),
+     ("recovery_rate",)),
+    (("originated", "origination volume", "originations", "funded amount", "principal originated", "loans originated", "loan volume", "origination"),
+     ("total_originated",)),
+    (("recoveries", "recovered amount", "amount recovered", "recovery"),
+     ("total_recovered",)),
+    (("charge-offs", "write-offs", "losses", "amount charged off"),
+     ("total_charged_off", "charged_off_amount")),
+    (("interest income", "interest revenue", "interest collected"),
+     ("total_interest",)),
+    (("late fees",), ("total_late_fees",)),
+    (("cash collected", "payments received", "total payments", "collections"),
+     ("total_received",)),
+    (("hard inquiries", "hard inquiry count"),
+     ("hard_inquiry_count",)),
+    (("inquiries", "bureau pulls", "credit inquiries"),
+     ("creditinquiry.count",)),
+    (("how many loans", "loan count", "number of loans", "loans"),
+     ("loan.count",)),
+    (("how many applications", "application count", "applications"),
+     ("application.count",)),
+    (("how many branches", "branches"),
+     ("branch.count",)),
+    (("officers", "loan officers", "headcount"),
+     ("loanofficer.count", "active_count")),
+    (("avg fico", "average fico", "average credit score"),
+     ("avg_fico",)),
+    (("avg loan", "average loan size"),
+     ("avg_loan_amount",)),
+    (("weighted avg rate", "wac"),
+     ("weighted_avg_rate",)),
+    (("avg interest rate", "average apr"),
+     ("avg_interest_rate",)),
+    (("homeowner rate",),
+     ("homeowner_rate",)),
     # AOV / average order value
     (("aov", "average order"), ("aov", "avg_total_price", "avg_order")),
     # Late rate (must come before "rate" or generic terms)
@@ -74,9 +118,26 @@ _MEASURE_CONCEPTS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
 ]
 
 _DIMENSION_CONCEPTS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+    # ── Lending vertical first ──
+    (("grade", "risk grade", "credit grade"), ("loan.grade",)),
+    (("subgrade", "sub-grade"), ("loan.subgrade",)),
+    (("purpose", "use of funds"), ("loan.purpose",)),
+    (("loan status", "servicing status"), ("loan.status",)),
+    (("application status",), ("application.status",)),
+    (("decline reason", "rejection reason", "denial reason"), ("decline_reason",)),
+    (("credit tier", "risk tier", "risk band", "risk segment"), ("credit_tier",)),
+    (("acquisition channel",), ("acquisition_channel",)),
+    (("payment method", "payment channel"), ("payment_method",)),
+    (("product", "product type", "loan type"), ("product_type",)),
+    (("specialty",), ("specialty",)),
+    (("bureau", "credit bureau"), ("bureau",)),
+    (("inquiry type", "pull type"), ("inquiry_type",)),
+    (("officer", "loan officer"), ("loanofficer.name", "officer.name")),
+    (("branch",), ("branch.name",)),
+    # ── TPC / generic fallbacks ──
     (("country", "countries"), ("country", "nation.name")),
     (("nation",), ("nation.name",)),
-    (("region",), ("region.name",)),
+    (("region",), ("region.name", "branch.region")),
     (("status",), (".status",)),
     (("segment", "market segment", "customer segment"), ("market_segment", "mktsegment")),
     (("priority",), ("priority",)),
@@ -84,7 +145,8 @@ _DIMENSION_CONCEPTS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
     (("brand",), (".brand",)),
     (("type",), (".type",)),
     (("city",), (".city",)),
-    (("state",), (".state",)),
+    (("state",), ("customer.state", ".state",)),
+    (("channel",), ("channel",)),
 ]
 
 _SEGMENT_CONCEPTS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
@@ -100,6 +162,12 @@ _SEGMENT_CONCEPTS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
 
 # Known time dimension candidates (first one we find in the schema wins).
 _TIME_DIMENSION_CANDIDATES = (
+    "Loan.origination_date",
+    "Application.application_date",
+    "Payment.scheduled_date",
+    "Collection.opened_date",
+    "Customer.signup_date",
+    "CreditInquiry.inquiry_date",
     "Orders.order_date", "Orders.created_at",
     "LineItem.ship_date", "LineItem.commit_date",
 )
@@ -166,6 +234,7 @@ def _find_member(
     question: str,
     pool: set[str],
     concepts: list[tuple[tuple[str, ...], tuple[str, ...]]],
+    prefer_cube: str | None = None,
 ) -> str | None:
     """Pick the best-matching pool member for the user question.
 
@@ -175,9 +244,16 @@ def _find_member(
     - When still tied, prefer SHORTER member names (less specific defaults).
     - Members containing 'paid_' / 'returned' / 'high_' etc. are treated as more
       specific and only chosen when the question explicitly mentions the modifier.
+    - When prefer_cube is set (e.g. matching dimensions against the measure's
+      cube), members from that cube get sorted first.
     """
     lower = question.lower()
-    pool_list = sorted(pool, key=lambda x: (len(x), x))  # shorter first → preferred default
+
+    def _sort_key(m: str) -> tuple[int, int, str]:
+        same_cube = 0 if (prefer_cube and m.startswith(prefer_cube + ".")) else 1
+        return (same_cube, len(m), m)
+
+    pool_list = sorted(pool, key=_sort_key)  # same-cube first, then shorter
 
     modifier_markers = ("paid_", "returned", "late", "high_value", "high_priority", "open", "finished")
 
@@ -297,10 +373,14 @@ def _build_query(question: str, schema: dict[str, set[str]]) -> dict[str, Any]:
 
     measure = _find_member(question, schema["measures"], _MEASURE_CONCEPTS)
     if not measure and schema["measures"]:
-        # Fallback: any "revenue" measure → any "count" measure → first available.
-        for m in schema["measures"]:
-            if "revenue" in m.lower():
-                measure = m
+        # Fallback: vertical-aware. Prefer headline measures by name match.
+        # Lending → total_originated; SaaS → mrr; TPC-H → revenue; otherwise count.
+        for needle in ("total_originated", "revenue", "mrr"):
+            for m in schema["measures"]:
+                if needle in m.lower():
+                    measure = m
+                    break
+            if measure:
                 break
         if not measure:
             for m in schema["measures"]:
@@ -312,7 +392,8 @@ def _build_query(question: str, schema: dict[str, set[str]]) -> dict[str, Any]:
     if measure:
         cube_query["measures"] = [measure]
 
-    dim = _find_member(question, schema["dimensions"], _DIMENSION_CONCEPTS)
+    measure_cube = measure.split(".")[0] if measure else None
+    dim = _find_member(question, schema["dimensions"], _DIMENSION_CONCEPTS, prefer_cube=measure_cube)
     if dim:
         cube_query["dimensions"] = [dim]
 
@@ -326,13 +407,22 @@ def _build_query(question: str, schema: dict[str, set[str]]) -> dict[str, Any]:
             granularity = g
             break
     date_range = None
-    for phrase in (
-        "last month", "this month", "last quarter", "this quarter",
-        "this year", "last year", "today", "yesterday",
-    ):
-        if phrase in question.lower():
-            date_range = phrase
-            break
+    # "last 3 months", "last 7 days", "past 6 weeks", etc.
+    rel = re.search(
+        r"\b(?:last|past|previous)\s+(\d+)\s+(day|week|month|quarter|year)s?\b",
+        question.lower(),
+    )
+    if rel:
+        date_range = f"last {rel.group(1)} {rel.group(2)}s"
+    else:
+        for phrase in (
+            "last month", "this month", "last quarter", "this quarter",
+            "this year", "last year", "today", "yesterday",
+            "month-to-date", "year-to-date", "mtd", "ytd",
+        ):
+            if phrase in question.lower():
+                date_range = phrase
+                break
     if granularity or date_range:
         td_dim = _pick_time_dimension(schema)
         if td_dim:

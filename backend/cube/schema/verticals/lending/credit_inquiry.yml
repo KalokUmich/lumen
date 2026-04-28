@@ -1,0 +1,72 @@
+cubes:
+  - name: CreditInquiry
+    sql_table: main.credit_inquiries
+    description: |
+      Credit-bureau pulls, both soft and hard. Used for "too many recent
+      inquiries" risk signals and bureau-mix analysis.
+    meta:
+      ai_facing: true
+      vertical: lending
+      domain: risk
+
+    joins:
+      - name: Customer
+        sql: "{CUBE}.customer_id = {Customer}.customer_id"
+        relationship: many_to_one
+
+    dimensions:
+      - name: id
+        sql: inquiry_id
+        type: number
+        primary_key: true
+      - name: code
+        sql: inquiry_code
+        type: string
+      - name: customer_id
+        sql: customer_id
+        type: number
+      - name: bureau
+        sql: bureau
+        type: string
+        description: "Which bureau was queried"
+        meta:
+          enum_values: [Equifax, Experian, TransUnion, Internal]
+          synonyms: [bureau, agency, credit bureau]
+      - name: inquiry_type
+        sql: inquiry_type
+        type: string
+        description: "Hard / soft / pre-screen"
+        meta:
+          enum_values: [Soft, Hard, Pre-screen]
+          synonyms: [type, inquiry type, pull type]
+      - name: score_at_inquiry
+        sql: score_at_inquiry
+        type: number
+        description: "Credit score returned by the bureau at this inquiry"
+      - name: inquiry_date
+        sql: inquiry_date
+        type: time
+        description: "When the inquiry was performed"
+        granularities:
+          - {name: day, interval: 1 day}
+          - {name: week, interval: 1 week}
+          - {name: month, interval: 1 month}
+          - {name: quarter, interval: 1 quarter}
+          - {name: year, interval: 1 year}
+
+    measures:
+      - name: count
+        sql: inquiry_id
+        type: count_distinct
+        description: "Number of credit inquiries"
+        meta:
+          synonyms: [inquiries, pulls, bureau pulls]
+      - name: hard_inquiry_count
+        sql: inquiry_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.inquiry_type = 'Hard'"
+      - name: avg_score_at_inquiry
+        sql: score_at_inquiry
+        type: avg
+        description: "Average bureau score returned at inquiry time"

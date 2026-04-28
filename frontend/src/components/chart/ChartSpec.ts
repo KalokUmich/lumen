@@ -43,6 +43,7 @@ export const ChartType = z.enum([
   "donut",
   "treemap",
   "table",
+  "markdown",
   "empty",
 ]);
 export type ChartType = z.infer<typeof ChartType>;
@@ -56,10 +57,21 @@ export const ChartSpec = z.object({
   facet: FacetRef.optional(),
   title: z.string().optional(),
   subtitle: z.string().optional(),
+  caption: z.string().optional(),  // shown below the plot, decodes abbreviations
+  compare: z
+    .object({
+      prior_date_range: z.string(),
+      label: z.string(),
+      time_dimension: z.string(),
+    })
+    .optional(),
   annotations: z.array(z.record(z.unknown())).optional(),
   rationale: z.string().optional(),
   confidence: z.number().optional(),
   alt_text: z.string().optional(),
+  // Markdown viz primitive (§19.1 #1). When type === "markdown", `template`
+  // holds Mustache-bound HTML the renderer fills against the result rows.
+  template: z.string().optional(),
 });
 export type ChartSpec = z.infer<typeof ChartSpec>;
 

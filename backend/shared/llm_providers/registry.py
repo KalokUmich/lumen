@@ -46,6 +46,28 @@ class ProviderRegistry:
         self._default_provider: str | None = None
         self._fallback_chain: list[str] = []
         self._started = False
+        # Per-provider running-total token counters for the cache hit-rate metric.
+        self._token_stats: dict[str, dict[str, int]] = {}
+
+    def record_usage(
+        self,
+        provider: str,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read: int = 0,
+        cache_create: int = 0,
+    ) -> None:
+        """Aggregate per-provider token counts so /providers can report a cache hit-rate."""
+        st = self._token_stats.setdefault(
+            provider,
+            {"calls": 0, "input": 0, "output": 0, "cache_read": 0, "cache_create": 0},
+        )
+        st["calls"] += 1
+        st["input"] += input_tokens or 0
+        st["output"] += output_tokens or 0
+        st["cache_read"] += cache_read or 0
+        st["cache_create"] += cache_create or 0
 
     @property
     def started(self) -> bool:
@@ -126,6 +148,23 @@ class ProviderRegistry:
         )
 
     def health_report(self) -> dict[str, Any]:
+        def _stats(name: str) -> dict[str, Any]:
+            st = self._token_stats.get(name) or {}
+            input_tokens = st.get("input", 0)
+            cache_read = st.get("cache_read", 0)
+            # Cache hit-rate = cache_read / (cache_read + cache_create + input).
+            # Approximation: if input includes cache_read, divide by input only.
+            denom = max(1, cache_read + input_tokens)
+            hit_rate = cache_read / denom if cache_read else 0.0
+            return {
+                "calls": st.get("calls", 0),
+                "input_tokens": input_tokens,
+                "output_tokens": st.get("output", 0),
+                "cache_read_tokens": cache_read,
+                "cache_create_tokens": st.get("cache_create", 0),
+                "cache_hit_rate": round(hit_rate, 4),
+            }
+
         return {
             "default": self._default_provider,
             "fallbacks": self._fallback_chain,
@@ -135,6 +174,7 @@ class ProviderRegistry:
                     "error": h.error,
                     "latency_ms": round(h.latency_ms or 0, 1) if h.latency_ms else None,
                     "checked_at": h.checked_at,
+                    "stats": _stats(name),
                 }
                 for name, h in self._health.items()
             },

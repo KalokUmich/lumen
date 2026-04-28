@@ -16,6 +16,7 @@ export default {
         success: "#3DD68C",
         warning: "#F0A04B",
         danger: "#FF5C5C",
+        info: "#6BD3FF",
       },
       fontFamily: {
         sans: ["Inter Variable", "Inter", "system-ui", "sans-serif"],

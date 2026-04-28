@@ -1,4 +1,4 @@
-# Golden set for AI quality regression — TPC-H vertical.
+# Golden set for AI quality regression — lending vertical (default).
 #
 # Each entry is both a few-shot example AND an eval case.
 # Tested against:
@@ -12,20 +12,20 @@
 examples:
   # ── Magnitude (single value) ──────────────────────────────────────────────
 
-  - id: total_revenue
-    question: "What's our total revenue?"
+  - id: total_originated_all_time
+    question: "What's our total origination volume?"
     cube_query:
-      measures: [LineItem.revenue]
+      measures: [Loan.total_originated]
     expected:
-      measures_used: [LineItem.revenue]
+      measures_used: [Loan.total_originated]
       expected_shape: big_number
 
-  - id: total_orders
-    question: "How many orders have we received?"
+  - id: total_loans_count
+    question: "How many loans have we originated?"
     cube_query:
-      measures: [Orders.count]
+      measures: [Loan.count]
     expected:
-      measures_used: [Orders.count]
+      measures_used: [Loan.count]
       expected_shape: big_number
 
   - id: total_customers
@@ -36,294 +36,304 @@ examples:
       measures_used: [Customer.count]
       expected_shape: big_number
 
-  - id: return_rate_global
-    question: "What is our overall return rate?"
+  - id: default_rate_overall
+    question: "What is our overall default rate?"
     cube_query:
-      measures: [LineItem.return_rate]
+      measures: [Loan.default_rate]
     expected:
-      measures_used: [LineItem.return_rate]
+      measures_used: [Loan.default_rate]
+      expected_shape: big_number
+
+  - id: approval_rate_overall
+    question: "What's our approval rate?"
+    cube_query:
+      measures: [Application.approval_rate]
+    expected:
+      measures_used: [Application.approval_rate]
       expected_shape: big_number
 
   # ── Comparison: 1 measure × 1 dimension ──────────────────────────────────
 
-  - id: revenue_by_region
-    question: "Show me revenue by region"
+  - id: originated_by_grade
+    question: "Origination volume by grade"
     cube_query:
-      measures: [LineItem.revenue]
-      dimensions: [Region.name]
-      order: { "LineItem.revenue": "desc" }
+      measures: [Loan.total_originated]
+      dimensions: [Loan.grade]
     expected:
-      measures_used: [LineItem.revenue]
-      dimensions_used: [Region.name]
+      measures_used: [Loan.total_originated]
+      dimensions_used: [Loan.grade]
+      expected_shape: bar
 
-  - id: top5_nations_revenue
-    question: "Top 5 nations by revenue"
+  - id: default_rate_by_grade
+    question: "Default rate by grade"
     cube_query:
-      measures: [LineItem.revenue]
-      dimensions: [Nation.name]
-      order: { "LineItem.revenue": "desc" }
+      measures: [Loan.default_rate]
+      dimensions: [Loan.grade]
+    expected:
+      measures_used: [Loan.default_rate]
+      dimensions_used: [Loan.grade]
+      expected_shape: bar
+
+  - id: count_by_purpose
+    question: "Loan count by purpose"
+    cube_query:
+      measures: [Loan.count]
+      dimensions: [Loan.purpose]
+    expected:
+      measures_used: [Loan.count]
+      dimensions_used: [Loan.purpose]
+      expected_shape: bar
+
+  - id: customers_by_state
+    question: "Customer count by state"
+    cube_query:
+      measures: [Customer.count]
+      dimensions: [Customer.state]
+    expected:
+      measures_used: [Customer.count]
+      dimensions_used: [Customer.state]
+      expected_shape: bar
+
+  - id: customers_by_credit_tier
+    question: "How many customers in each credit tier?"
+    cube_query:
+      measures: [Customer.count]
+      dimensions: [Customer.credit_tier]
+    expected:
+      measures_used: [Customer.count]
+      dimensions_used: [Customer.credit_tier]
+      expected_shape: bar
+
+  - id: top_5_branches_by_volume
+    question: "Top 5 branches by origination volume"
+    cube_query:
+      measures: [Loan.total_originated]
+      dimensions: [Branch.name]
+      order: {Loan.total_originated: desc}
       limit: 5
     expected:
-      measures_used: [LineItem.revenue]
-      dimensions_used: [Nation.name]
-      expected_row_count_max: 5
+      measures_used: [Loan.total_originated]
+      dimensions_used: [Branch.name]
+      expected_shape: bar
 
-  - id: revenue_by_segment
-    question: "Revenue by customer segment"
+  - id: avg_fico_by_state
+    question: "Average FICO score by state"
     cube_query:
-      measures: [LineItem.revenue]
-      dimensions: [Customer.market_segment]
+      measures: [Customer.avg_fico]
+      dimensions: [Customer.state]
     expected:
-      measures_used: [LineItem.revenue]
-      dimensions_used: [Customer.market_segment]
+      measures_used: [Customer.avg_fico]
+      dimensions_used: [Customer.state]
+      expected_shape: bar
 
-  - id: orders_by_priority
-    question: "How many orders are there in each priority tier?"
+  - id: approval_rate_by_product
+    question: "Approval rate by product type"
     cube_query:
-      measures: [Orders.count]
-      dimensions: [Orders.order_priority]
+      measures: [Application.approval_rate]
+      dimensions: [Application.product_type]
     expected:
-      measures_used: [Orders.count]
-      dimensions_used: [Orders.order_priority]
+      measures_used: [Application.approval_rate]
+      dimensions_used: [Application.product_type]
+      expected_shape: bar
 
-  - id: customer_count_by_region
-    question: "Customer count by region"
+  - id: decline_reasons
+    question: "Decline reasons by count"
     cube_query:
-      measures: [Customer.count]
-      dimensions: [Region.name]
+      measures: [Application.declined_count]
+      dimensions: [Application.decline_reason]
+      order: {Application.declined_count: desc}
     expected:
-      measures_used: [Customer.count]
-      dimensions_used: [Region.name]
-
-  - id: top10_nations_customers
-    question: "Top 10 nations by customer count"
-    cube_query:
-      measures: [Customer.count]
-      dimensions: [Nation.name]
-      order: { "Customer.count": "desc" }
-      limit: 10
-    expected:
-      measures_used: [Customer.count]
-      dimensions_used: [Nation.name]
-      expected_row_count_max: 10
+      measures_used: [Application.declined_count]
+      dimensions_used: [Application.decline_reason]
+      expected_shape: bar
 
   # ── Time series ──────────────────────────────────────────────────────────
 
-  - id: orders_by_month_recent
-    question: "Order count by month for the last 12 months"
+  - id: originations_by_month
+    question: "Loan originations by month for the last 12 months"
     cube_query:
-      measures: [Orders.count]
+      measures: [Loan.count]
       timeDimensions:
-        - dimension: Orders.order_date
+        - dimension: Loan.origination_date
           granularity: month
           dateRange: "last 12 months"
     expected:
-      measures_used: [Orders.count]
+      measures_used: [Loan.count]
       expected_shape: line
 
-  - id: revenue_trend_year
-    question: "Revenue trend over the last year"
+  - id: origination_volume_trend
+    question: "Origination volume trend over the last year"
     cube_query:
-      measures: [LineItem.revenue]
+      measures: [Loan.total_originated]
       timeDimensions:
-        - dimension: Orders.order_date
+        - dimension: Loan.origination_date
           granularity: month
           dateRange: "last year"
     expected:
-      measures_used: [LineItem.revenue]
+      measures_used: [Loan.total_originated]
       expected_shape: line
 
-  - id: revenue_by_region_over_time
-    question: "Revenue by region over time, monthly"
+  - id: originations_by_grade_over_time
+    question: "Loan count by grade over time, monthly"
     cube_query:
-      measures: [LineItem.revenue]
-      dimensions: [Region.name]
+      measures: [Loan.count]
+      dimensions: [Loan.grade]
       timeDimensions:
-        - dimension: Orders.order_date
+        - dimension: Loan.origination_date
           granularity: month
     expected:
-      measures_used: [LineItem.revenue]
-      dimensions_used: [Region.name]
+      measures_used: [Loan.count]
+      dimensions_used: [Loan.grade]
 
-  - id: aov_yearly
-    question: "Average order value by year"
+  - id: default_rate_trend
+    question: "Default rate trend by month this year"
     cube_query:
-      measures: [Orders.avg_total_price]
+      measures: [Loan.default_rate]
       timeDimensions:
-        - dimension: Orders.order_date
-          granularity: year
+        - dimension: Loan.origination_date
+          dateRange: "this year"
+          granularity: month
     expected:
-      measures_used: [Orders.avg_total_price]
+      measures_used: [Loan.default_rate]
+      expected_shape: line
+
+  - id: payments_by_month
+    question: "Total payments collected by month last year"
+    cube_query:
+      measures: [Payment.total_received]
+      timeDimensions:
+        - dimension: Payment.scheduled_date
+          dateRange: "last year"
+          granularity: month
+    expected:
+      measures_used: [Payment.total_received]
+      expected_shape: line
+
+  - id: applications_by_channel_quarter
+    question: "Application volume by channel by quarter"
+    cube_query:
+      measures: [Application.count]
+      dimensions: [Application.channel]
+      timeDimensions:
+        - dimension: Application.application_date
+          granularity: quarter
+    expected:
+      measures_used: [Application.count]
+      dimensions_used: [Application.channel]
+
+  # Regression for IMPLEMENTATION_PLAN §0.5 bug B1+B2:
+  # the AI must emit a `dateRange` for "last 3 months", AND the visualizer
+  # must pick grouped-bar for the resulting 3-period × 5-region shape.
+  - id: applications_by_region_last_3_months
+    question: "number of applications by region over last 3 months over time"
+    cube_query:
+      measures: [Application.count]
+      dimensions: [Branch.region]
+      timeDimensions:
+        - dimension: Application.application_date
+          dateRange: "last 3 months"
+          granularity: month
+    expected:
+      measures_used: [Application.count]
+      dimensions_used: [Branch.region]
+      requires_date_range: true
+      expected_shape: grouped_bar
 
   # ── Segments / filters ───────────────────────────────────────────────────
 
-  - id: returned_lineitems_by_ship_mode
-    question: "Returned line items by ship mode"
+  - id: subprime_default_rate
+    question: "Default rate among sub-prime loans"
     cube_query:
-      measures: [LineItem.count]
-      dimensions: [LineItem.ship_mode]
-      segments: [LineItem.returned]
+      measures: [Loan.default_rate]
+      segments: [Loan.subprime_grade]
     expected:
-      measures_used: [LineItem.count]
-      dimensions_used: [LineItem.ship_mode]
-      segments_used: [LineItem.returned]
-
-  - id: late_rate_by_ship_mode
-    question: "What's the late delivery rate broken out by ship mode?"
-    cube_query:
-      measures: [LineItem.late_rate]
-      dimensions: [LineItem.ship_mode]
-    expected:
-      measures_used: [LineItem.late_rate]
-      dimensions_used: [LineItem.ship_mode]
-
-  - id: high_priority_order_count_yearly
-    question: "How many high-priority orders did we have each year?"
-    cube_query:
-      measures: [Orders.count]
-      segments: [Orders.high_priority]
-      timeDimensions:
-        - dimension: Orders.order_date
-          granularity: year
-    expected:
-      measures_used: [Orders.count]
-      segments_used: [Orders.high_priority]
-
-  - id: customers_in_debt_by_region
-    question: "How many customers are in debt, broken out by region?"
-    cube_query:
-      measures: [Customer.count]
-      segments: [Customer.in_debt]
-      dimensions: [Region.name]
-    expected:
-      measures_used: [Customer.count]
-      segments_used: [Customer.in_debt]
-      dimensions_used: [Region.name]
-
-  # ── Supply side (PartSupp) ───────────────────────────────────────────────
-
-  - id: total_inventory_value
-    question: "What's our total inventory value across all suppliers?"
-    cube_query:
-      measures: [PartSupp.total_inventory_value]
-    expected:
-      measures_used: [PartSupp.total_inventory_value]
+      measures_used: [Loan.default_rate]
+      segments_used: [Loan.subprime_grade]
       expected_shape: big_number
 
-  - id: inventory_value_by_region
-    question: "Inventory value by region"
+  - id: prime_total_originated
+    question: "How much have we originated to prime customers this year?"
     cube_query:
-      measures: [PartSupp.total_inventory_value]
-      dimensions: [Region.name]
-      order: { "PartSupp.total_inventory_value": "desc" }
-    expected:
-      measures_used: [PartSupp.total_inventory_value]
-      dimensions_used: [Region.name]
-
-  - id: avg_supply_cost_by_brand
-    question: "Average supply cost per brand"
-    cube_query:
-      measures: [PartSupp.avg_supply_cost]
-      dimensions: [Part.brand]
-      order: { "PartSupp.avg_supply_cost": "desc" }
-    expected:
-      measures_used: [PartSupp.avg_supply_cost]
-      dimensions_used: [Part.brand]
-
-  - id: supplier_count_by_nation
-    question: "Number of suppliers per nation"
-    cube_query:
-      measures: [Supplier.count]
-      dimensions: [Nation.name]
-      order: { "Supplier.count": "desc" }
-    expected:
-      measures_used: [Supplier.count]
-      dimensions_used: [Nation.name]
-
-  # ── Composition ──────────────────────────────────────────────────────────
-
-  - id: revenue_share_by_segment
-    question: "What share of revenue does each customer segment have?"
-    cube_query:
-      measures: [LineItem.revenue]
-      dimensions: [Customer.market_segment]
-    expected:
-      measures_used: [LineItem.revenue]
-      dimensions_used: [Customer.market_segment]
-      # ideal chart: donut (composition intent + ≤6 slices)
-
-  - id: order_status_breakdown
-    question: "Breakdown of orders by status"
-    cube_query:
-      measures: [Orders.count]
-      dimensions: [Orders.status]
-    expected:
-      measures_used: [Orders.count]
-      dimensions_used: [Orders.status]
-
-  # ── Two dimensions (heatmap-friendly) ────────────────────────────────────
-
-  - id: returns_by_ship_mode_x_priority
-    question: "Returned items broken out by ship mode and order priority"
-    cube_query:
-      measures: [LineItem.count]
-      dimensions: [LineItem.ship_mode, Orders.order_priority]
-      segments: [LineItem.returned]
-    expected:
-      measures_used: [LineItem.count]
-      dimensions_used: [LineItem.ship_mode, Orders.order_priority]
-      segments_used: [LineItem.returned]
-
-  # ── Relationship (scatter) ───────────────────────────────────────────────
-
-  - id: balance_vs_orders
-    question: "How does customer account balance relate to their order volume?"
-    cube_query:
-      measures: [Customer.avg_account_balance, Orders.count]
-      dimensions: [Customer.market_segment]
-    expected:
-      measures_used: [Customer.avg_account_balance, Orders.count]
-
-  # ── Specific filtered breakdowns ─────────────────────────────────────────
-
-  - id: revenue_air_shipping_by_region
-    question: "Revenue from air-shipped line items, by region"
-    cube_query:
-      measures: [LineItem.revenue]
-      dimensions: [Region.name]
-      segments: [LineItem.by_air]
-    expected:
-      measures_used: [LineItem.revenue]
-      dimensions_used: [Region.name]
-      segments_used: [LineItem.by_air]
-
-  - id: large_orders_count_by_priority
-    question: "How many large orders ($100K+) at each priority level?"
-    cube_query:
-      measures: [Orders.count]
-      dimensions: [Orders.order_priority]
-      segments: [Orders.large_orders]
-    expected:
-      measures_used: [Orders.count]
-      dimensions_used: [Orders.order_priority]
-      segments_used: [Orders.large_orders]
-
-  # ── Edge cases ───────────────────────────────────────────────────────────
-
-  - id: avg_supply_cost_global
-    question: "What's the average supply cost across our catalog?"
-    cube_query:
-      measures: [PartSupp.avg_supply_cost]
-    expected:
-      measures_used: [PartSupp.avg_supply_cost]
-      expected_shape: big_number
-
-  - id: late_count_recent
-    question: "How many late shipments did we have this year?"
-    cube_query:
-      measures: [LineItem.late_count]
+      measures: [Loan.total_originated]
+      segments: [Loan.prime_grade]
       timeDimensions:
-        - dimension: LineItem.ship_date
+        - dimension: Loan.origination_date
           dateRange: "this year"
     expected:
-      measures_used: [LineItem.late_count]
+      measures_used: [Loan.total_originated]
+      segments_used: [Loan.prime_grade]
+      expected_shape: big_number
+
+  - id: high_value_applications_count
+    question: "How many applications are for $25k+?"
+    cube_query:
+      measures: [Application.count]
+      segments: [Application.high_value]
+    expected:
+      measures_used: [Application.count]
+      segments_used: [Application.high_value]
+      expected_shape: big_number
+
+  # ── Two-dim breakdowns ──────────────────────────────────────────────────
+
+  - id: default_rate_by_grade_purpose
+    question: "Default rate by grade and purpose"
+    cube_query:
+      measures: [Loan.default_rate]
+      dimensions: [Loan.grade, Loan.purpose]
+    expected:
+      measures_used: [Loan.default_rate]
+      dimensions_used: [Loan.grade, Loan.purpose]
+      expected_shape: heatmap
+
+  - id: originated_by_branch_region_product
+    question: "Origination volume by region and product type"
+    cube_query:
+      measures: [Loan.total_originated]
+      dimensions: [Branch.region, Loan.product_type]
+    expected:
+      measures_used: [Loan.total_originated]
+      dimensions_used: [Branch.region, Loan.product_type]
+
+  # ── Servicing / payment ──────────────────────────────────────────────────
+
+  - id: late_payment_rate_by_method
+    question: "Late payment rate by payment method"
+    cube_query:
+      measures: [Payment.late_payment_rate]
+      dimensions: [Payment.payment_method]
+    expected:
+      measures_used: [Payment.late_payment_rate]
+      dimensions_used: [Payment.payment_method]
+      expected_shape: bar
+
+  - id: total_interest_collected
+    question: "Total interest income collected"
+    cube_query:
+      measures: [Payment.total_interest]
+    expected:
+      measures_used: [Payment.total_interest]
+      expected_shape: big_number
+
+  # ── Recovery ─────────────────────────────────────────────────────────────
+
+  - id: recovery_rate_by_channel
+    question: "Recovery rate by collection channel"
+    cube_query:
+      measures: [Collection.recovery_rate]
+      dimensions: [Collection.channel]
+    expected:
+      measures_used: [Collection.recovery_rate]
+      dimensions_used: [Collection.channel]
+      expected_shape: bar
+
+  - id: total_recovered_this_year
+    question: "Total amount recovered this year"
+    cube_query:
+      measures: [Collection.total_recovered]
+      timeDimensions:
+        - dimension: Collection.opened_date
+          dateRange: "this year"
+    expected:
+      measures_used: [Collection.total_recovered]
+      expected_shape: big_number

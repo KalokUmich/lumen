@@ -71,17 +71,26 @@ async def _execute(query: dict[str, Any], ctx: WorkspaceContext) -> dict[str, An
     # switching actually changes the data backend.
     if QUERY_BACKEND.startswith("duckdb"):
         import sys
+        import time as _time
         sys.path.insert(0, str(_repo_root()))
         # Look up the workspace's vertical to pick the right runner.
         vertical = await _vertical_for(ctx.workspace_id)
-        if vertical == "saas_finance":
-            from local_test import duckdb_query_runner_saas as r
+        if vertical == "lending":
+            from local_test import duckdb_query_runner_lending as r
         elif vertical == "orders":
             from local_test import duckdb_query_runner as r
         else:
-            from local_test import duckdb_query_runner_tpch as r
+            from local_test import duckdb_query_runner_lending as r  # type: ignore[no-redef]
+        t0 = _time.perf_counter()
         result = r.run_query(query)
-        return {"data": result["data"], "annotation": {}, "sql": result.get("sql")}
+        ms = round((_time.perf_counter() - t0) * 1000, 1)
+        rows = result.get("data") or []
+        return {
+            "data": rows,
+            "annotation": {},
+            "sql": result.get("sql"),
+            "meta": {"ms": ms, "rows": len(rows), "backend": "duckdb", "vertical": vertical, "cache_hit": False},
+        }
     # Production: real Cube.
     return await cube_client.run(
         query,
@@ -124,7 +133,13 @@ def _repo_root():
 
 
 def _coerce_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """JSON-serialize rows: cast Decimal → float, datetime → ISO8601 string."""
+    """JSON-serialize rows for the wire:
+    - Decimal → float
+    - date     → "YYYY-MM-DD"
+    - datetime → "YYYY-MM-DD" if time component is all-zero (date-aligned),
+                 otherwise full ISO8601 with time.
+    The date-only form keeps tooltips and axis labels free of "00:00:00" noise.
+    """
     from datetime import date, datetime
     from decimal import Decimal
 
@@ -134,7 +149,12 @@ def _coerce_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for k, v in row.items():
             if isinstance(v, Decimal):
                 new_row[k] = float(v)
-            elif isinstance(v, (date, datetime)):
+            elif isinstance(v, datetime):
+                if v.hour == 0 and v.minute == 0 and v.second == 0 and v.microsecond == 0:
+                    new_row[k] = v.date().isoformat()
+                else:
+                    new_row[k] = v.isoformat()
+            elif isinstance(v, date):
                 new_row[k] = v.isoformat()
             else:
                 new_row[k] = v
@@ -154,7 +174,9 @@ async def run_query(
         key = _cache_key(ctx.workspace_id, secured, ctx.user_attrs)
         cached = await redis.get(key)
         if cached:
-            return json.loads(cached)
+            payload = json.loads(cached)
+            payload.setdefault("meta", {})["cache_hit"] = True
+            return payload
 
     try:
         result = await _execute(secured, ctx)
@@ -163,10 +185,19 @@ async def run_query(
         traceback.print_exc()
         raise CubeQueryFailed(str(e)) from e
 
-    slim = {"data": _coerce_rows(result.get("data", [])), "annotation": result.get("annotation", {})}
+    slim = {
+        "data": _coerce_rows(result.get("data", [])),
+        "annotation": result.get("annotation", {}),
+        "sql": result.get("sql"),  # surfaced for transparency in chat / workbench
+        "meta": result.get("meta", {}),  # ms, rows, cache_hit, vertical
+    }
     if redis is not None:
         from shared import settings as settings_module
         ttl = settings_module.get("cache.query_result_ttl", 300)
         key = _cache_key(ctx.workspace_id, secured, ctx.user_attrs)
         await redis.setex(key, ttl, json.dumps(slim, default=str))
     return slim
+
+
+# Mark cached results as cache_hit when re-served. Patch the cache return path.
+# (Done above by stamping meta in _execute; redis path retains stamp.)

@@ -18,7 +18,7 @@ export function LeftRail({
   onChange: (s: Surface) => void;
 }) {
   return (
-    <nav className="flex flex-col items-center gap-1 border-r border-border bg-bg-elevated py-2">
+    <nav className="flex flex-col items-center gap-1.5 border-r border-border bg-bg-elevated py-3">
       {items.map((it) => {
         const Icon = it.icon;
         const active = surface === it.id;
@@ -28,13 +28,13 @@ export function LeftRail({
             title={it.label}
             onClick={() => onChange(it.id)}
             className={clsx(
-              "flex h-9 w-9 items-center justify-center rounded-md transition-colors",
+              "flex h-10 w-10 items-center justify-center rounded-md transition-all duration-150",
               active
                 ? "bg-accent/15 text-accent"
-                : "text-fg-muted hover:bg-bg-subtle hover:text-fg"
+                : "text-fg-subtle hover:bg-bg-subtle hover:text-fg"
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-[18px] w-[18px]" />
           </button>
         );
       })}

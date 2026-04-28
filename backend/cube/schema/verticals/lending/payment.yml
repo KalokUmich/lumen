@@ -1,0 +1,124 @@
+cubes:
+  - name: Payment
+    sql_table: main.payments
+    description: |
+      Loan repayment events. The fact table for cash collected, principal
+      paydown, interest income, and late-payment behavior.
+    meta:
+      ai_facing: true
+      vertical: lending
+      domain: servicing
+
+    joins:
+      - name: Loan
+        sql: "{CUBE}.loan_id = {Loan}.loan_id"
+        relationship: many_to_one
+      - name: Customer
+        sql: "{CUBE}.customer_id = {Customer}.customer_id"
+        relationship: many_to_one
+
+    dimensions:
+      - name: id
+        sql: payment_id
+        type: number
+        primary_key: true
+      - name: code
+        sql: payment_code
+        type: string
+      - name: loan_id
+        sql: loan_id
+        type: number
+      - name: customer_id
+        sql: customer_id
+        type: number
+      - name: payment_method
+        sql: payment_method
+        type: string
+        description: "Channel the payment came in through"
+        meta:
+          enum_values: [ACH, Card, Check, Wire]
+          synonyms: [method, channel, payment channel]
+      - name: is_late
+        sql: is_late
+        type: boolean
+        description: "Whether the payment was received late"
+      - name: payment_sequence
+        sql: payment_sequence
+        type: number
+        description: "Which payment number this is in the loan's amortization schedule"
+      - name: scheduled_date
+        sql: scheduled_date
+        type: time
+        description: "Date the payment was scheduled (per amortization)"
+        granularities:
+          - {name: day, interval: 1 day}
+          - {name: week, interval: 1 week}
+          - {name: month, interval: 1 month}
+          - {name: quarter, interval: 1 quarter}
+          - {name: year, interval: 1 year}
+      - name: actual_payment_date
+        sql: actual_payment_date
+        type: time
+        description: "Date the payment was actually received (NULL if missed)"
+        granularities:
+          - {name: day, interval: 1 day}
+          - {name: month, interval: 1 month}
+          - {name: quarter, interval: 1 quarter}
+
+    measures:
+      - name: count
+        sql: payment_id
+        type: count_distinct
+        description: "Number of payment events"
+        meta:
+          synonyms: [payments, payment count, num payments]
+      - name: total_received
+        sql: payment_amount
+        type: sum
+        format: currency
+        description: "Total cash collected (USD)"
+        meta:
+          synonyms: [collections, cash collected, payments received, revenue]
+      - name: total_principal
+        sql: principal_amount
+        type: sum
+        format: currency
+        description: "Total principal paydown (USD)"
+      - name: total_interest
+        sql: interest_amount
+        type: sum
+        format: currency
+        description: "Total interest collected (USD)"
+        meta:
+          synonyms: [interest revenue, interest income]
+      - name: total_late_fees
+        sql: late_fee
+        type: sum
+        format: currency
+        description: "Total late fees collected (USD)"
+      - name: avg_payment_amount
+        sql: payment_amount
+        type: avg
+        format: currency
+        description: "Average payment amount (USD)"
+      - name: late_payment_count
+        sql: payment_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.is_late"
+        description: "Count of late payments"
+      - name: late_payment_rate
+        sql: "AVG(CASE WHEN {CUBE}.is_late THEN 1.0 ELSE 0 END)"
+        type: number
+        format: percent
+        description: "Share of payments received late (0-1)"
+        meta:
+          synonyms: [late rate, delinquency rate, late payment rate]
+
+    segments:
+      - name: late
+        sql: "{CUBE}.is_late"
+        description: "Payments received past due"
+      - name: card_payments
+        sql: "{CUBE}.payment_method = 'Card'"
+        description: "Card-based payments only"

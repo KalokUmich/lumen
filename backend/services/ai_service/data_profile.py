@@ -152,11 +152,14 @@ def profile(
 
     measure_profiles = [profile_column(rows, key(m), "measure") for m in measures_q]
     dim_profiles = [profile_column(rows, key(d), "dimension") for d in dimensions_q]
-    td_profiles = [profile_column(rows, key(td["dimension"]), "time") for td in time_dims_q]
 
-    granularity = (
-        time_dims_q[0].get("granularity") if time_dims_q else None
-    )
+    # Only treat a timeDimension as a time AXIS when it has a granularity.
+    # A timeDimension without granularity is a date-range FILTER and shouldn't
+    # cause us to render a line chart against a non-existent time column.
+    axis_time_dims = [td for td in time_dims_q if td.get("granularity")]
+    td_profiles = [profile_column(rows, key(td["dimension"]), "time") for td in axis_time_dims]
+
+    granularity = axis_time_dims[0].get("granularity") if axis_time_dims else None
 
     return DataSummary(
         n_rows=len(rows),

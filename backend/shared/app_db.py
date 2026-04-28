@@ -15,6 +15,7 @@ from typing import AsyncIterator
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -38,9 +39,11 @@ def _resolve_db_url() -> str:
     url = os.environ.get("LUMEN_APP_DB_URL")
     if url:
         return url
-    # Otherwise: secrets.databases.app_db.url
+    # Otherwise: secrets.databases.app_db.url IF the configured Postgres host
+    # is reachable. If it's a Postgres URL pointing at localhost and Postgres
+    # isn't running, fall through to SQLite so dev works without docker.
     secret_url = settings_module.secret("databases.app_db.url")
-    if secret_url:
+    if secret_url and _is_db_reachable(secret_url):
         return secret_url
     # Local dev fallback: SQLite file inside local_test/data/.
     default_path = (
@@ -48,6 +51,23 @@ def _resolve_db_url() -> str:
     )
     default_path.parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite+aiosqlite:///{default_path}"
+
+
+def _is_db_reachable(url: str) -> bool:
+    """Cheap TCP probe so we don't waste 30s timing out on a stopped Postgres."""
+    if url.startswith("sqlite"):
+        return True
+    import socket
+    from urllib.parse import urlparse
+    try:
+        # asyncpg URLs are "postgresql+asyncpg://..." — strip the +driver part
+        parsed = urlparse(url.replace("+asyncpg", "").replace("+psycopg2", ""))
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 5432
+        with socket.create_connection((host, port), timeout=0.3):
+            return True
+    except (OSError, ValueError):
+        return False
 
 
 _engine = None
@@ -66,7 +86,7 @@ class Workspace(Base):
     id = Column(String, primary_key=True)
     slug = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
-    vertical = Column(String, nullable=False, default="tpch")  # template the workspace was cloned from
+    vertical = Column(String, nullable=False, default="lending")  # template the workspace was cloned from
     llm_preset = Column(String, nullable=False, default="balanced")
     cube_schema_ref = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -168,6 +188,31 @@ class FailedQueryReview(Base):
     error = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="open")
     triaged_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Schedule(Base):
+    """Scheduled deliveries (Phase 1 M5 — dashboard scheduling stub).
+
+    Cron-driven email/Slack/webhook delivery. v0 stores rows but doesn't
+    actually fire — a Temporal worker will pick them up in Sprint G.
+    """
+    __tablename__ = "schedules"
+    id = Column(String, primary_key=True)
+    workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=False)
+    dashboard_id = Column(String, ForeignKey("dashboards.id"), nullable=True)
+    workbook_id = Column(String, ForeignKey("workbooks.id"), nullable=True)
+    name = Column(String, nullable=False)
+    cron = Column(String, nullable=False)               # e.g. "0 9 * * MON-FRI"
+    timezone = Column(String, nullable=False, default="UTC")
+    destination_kind = Column(String, nullable=False)   # "email" | "slack" | "webhook" | "sheets" | "s3"
+    destination_config = Column(JSON, nullable=False, default=dict)
+    body_template = Column(Text, nullable=True)         # Mustache
+    is_paused = Column(Boolean, nullable=False, default=False)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    last_run_status = Column(String, nullable=True)     # "ok" | "error"
+    last_run_error = Column(Text, nullable=True)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

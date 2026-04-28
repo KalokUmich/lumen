@@ -1,0 +1,100 @@
+cubes:
+  - name: Collection
+    sql_table: main.collections
+    description: |
+      Collection cases on delinquent / charged-off loans. Tracks recovery
+      effort, channel, and outcome.
+    meta:
+      ai_facing: true
+      vertical: lending
+      domain: servicing
+
+    joins:
+      - name: Loan
+        sql: "{CUBE}.loan_id = {Loan}.loan_id"
+        relationship: many_to_one
+      - name: Customer
+        sql: "{CUBE}.customer_id = {Customer}.customer_id"
+        relationship: many_to_one
+
+    dimensions:
+      - name: id
+        sql: collection_id
+        type: number
+        primary_key: true
+      - name: code
+        sql: collection_code
+        type: string
+      - name: loan_id
+        sql: loan_id
+        type: number
+      - name: customer_id
+        sql: customer_id
+        type: number
+      - name: channel
+        sql: collection_channel
+        type: string
+        description: "How the collection effort is being pursued"
+        meta:
+          enum_values: [Internal, External Agency, Legal, Sold]
+          synonyms: [channel, agency, collection type]
+      - name: status
+        sql: status
+        type: string
+        description: "Current outcome of the collection case"
+        meta:
+          enum_values: [recovered, partial_recovery, in_collection, written_off]
+          synonyms: [status, outcome, collection status]
+      - name: opened_date
+        sql: opened_date
+        type: time
+        description: "Date the collection case was opened"
+        granularities:
+          - {name: day, interval: 1 day}
+          - {name: month, interval: 1 month}
+          - {name: quarter, interval: 1 quarter}
+          - {name: year, interval: 1 year}
+      - name: closed_date
+        sql: closed_date
+        type: time
+        description: "Date the collection case was resolved (NULL if open)"
+        granularities:
+          - {name: day, interval: 1 day}
+          - {name: month, interval: 1 month}
+
+    measures:
+      - name: count
+        sql: collection_id
+        type: count_distinct
+        description: "Number of collection cases"
+        meta:
+          synonyms: [collections, cases, collection cases]
+      - name: total_recovered
+        sql: amount_recovered
+        type: sum
+        format: currency
+        description: "Total amount recovered (USD)"
+        meta:
+          synonyms: [recoveries, recovered, recovery amount]
+      - name: total_charged_off
+        sql: amount_charged_off
+        type: sum
+        format: currency
+        description: "Total amount charged off / sent to collections (USD)"
+        meta:
+          synonyms: [charge-offs, write-offs, losses]
+      - name: recovery_rate
+        sql: "SUM({CUBE}.amount_recovered) / NULLIF(SUM({CUBE}.amount_charged_off), 0)"
+        type: number
+        format: percent
+        description: "Share of charged-off principal recovered (0-1)"
+        meta:
+          synonyms: [recovery rate, recovery %, recovery ratio]
+
+    segments:
+      - name: open_cases
+        sql: "{CUBE}.status IN ('in_collection','partial_recovery')"
+        description: "Currently active collection cases"
+      - name: closed_cases
+        sql: "{CUBE}.status IN ('recovered','written_off')"
+        description: "Resolved collection cases"

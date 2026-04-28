@@ -6,17 +6,37 @@
   :root {
     --plot-text: #E6E8EB;
     --plot-grid: #272B33;
+    /* Tufte breathing-room scale (skill §23). Used by Plot configs and CSS. */
+    --space-rhythm-1: 4px;
+    --space-rhythm-2: 8px;
+    --space-rhythm-3: 16px;
+    --space-rhythm-4: 24px;
+    --space-rhythm-5: 32px;
+    --space-rhythm-6: 48px;
+    --space-rhythm-7: 64px;
   }
 
   body {
     @apply bg-bg text-fg;
     font-feature-settings: "tnum", "cv11";
+    /* Default tabular numerals for the whole app — every digit aligns. */
+    font-variant-numeric: tabular-nums;
   }
 
-  /* Tabular numerals everywhere we render numbers */
+  /* Belt-and-braces: any cell/element rendering a number is tabular. */
   .num,
   td.num,
-  th.num {
+  th.num,
+  td:has(> .num),
+  [data-numeric="true"] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Plot's SVG inherits the same tabular numerals + Inter, even when we don't
+     set `style.fontFamily` per-call. */
+  svg.plot,
+  main figure svg {
+    font-family: "Inter Variable", Inter, system-ui, sans-serif;
     font-variant-numeric: tabular-nums;
   }
 }
@@ -42,6 +62,62 @@
   }
 
   .panel {
-    @apply rounded-lg border border-border bg-bg-elevated;
+    /* Tufte: borders before fills. No drop shadow — it's decorative ink.
+       Slightly looser corners (md, not lg) to feel less "card-like" and more
+       "data-surface". */
+    @apply rounded-md border border-border bg-bg-elevated transition-colors;
+  }
+  .panel:hover {
+    @apply border-border-strong;
+  }
+}
+
+/* ── Plot interactivity ────────────────────────────────────────────────────
+   Bars, dots, lines: subtle hover lift + tooltip from Plot's built-in tip mark.
+   The .plot-mark-hover class is added by PlotChart.tsx onto each mark.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@layer components {
+  /* Apply transitions to all interactive marks */
+  svg [class*="plot-mark-hover"] rect,
+  svg [class*="plot-mark-hover"] circle,
+  svg [class*="plot-mark-hover"] path {
+    transition: opacity 180ms ease, fill-opacity 180ms ease, transform 180ms ease;
+    transform-origin: center;
+    transform-box: fill-box;
+  }
+
+  /* On group hover, fade non-hovered marks (Tableau-style focus) */
+  svg [class*="plot-mark-hover"]:has(:hover) rect:not(:hover),
+  svg [class*="plot-mark-hover"]:has(:hover) circle:not(:hover) {
+    opacity: 0.35;
+  }
+
+  /* Hovered mark: slight scale + full opacity */
+  svg [class*="plot-mark-hover"] rect:hover,
+  svg [class*="plot-mark-hover"] circle:hover {
+    fill-opacity: 1 !important;
+    opacity: 1 !important;
+    transform: scale(1.04);
+  }
+
+  /* Plot's built-in tip mark — style the tooltip to match the dark theme */
+  svg g[aria-label="tip"] path {
+    fill: #1A1E25;
+    stroke: #3A3F49;
+    stroke-width: 1;
+  }
+  svg g[aria-label="tip"] text {
+    fill: #E6E8EB !important;
+    font-family: "Inter Variable", Inter, system-ui, sans-serif;
+    font-feature-settings: "tnum";
+  }
+
+  /* Subtle "breathing" idle pulse on big-number values
+     (only fires once on mount to draw eye to the headline number) */
+  @keyframes plot-pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 1; }
   }
 }

@@ -102,10 +102,16 @@ def select_chart(n_measures, n_dimensions, has_time, n_rows, dim_cardinalities, 
 
     # ── Time series ─────────────────────────────────────────────────────
     if has_time:
+        n_periods = distinct_count(time_buckets)   # months/quarters/years actually present
         if n_measures == 1 and n_dimensions == 0:
             return LINE if n_rows >= 5 else BAR(time_as_ordinal)
         if n_measures == 1 and n_dimensions == 1:
             cardinality = dim_cardinalities[dim_0]
+            # NEW (R11 in §13a): low-N time × low-N category → grouped bar.
+            # Position-on-common-scale beats color-distinction-of-series when
+            # both axes are short. See §4.6.1 for the named case.
+            if n_periods <= 4 and cardinality <= 5:
+                return GROUPED_BAR(x=time, group=dim_0)
             if cardinality <= 5:
                 return MULTI_LINE
             elif cardinality <= 12:
@@ -184,23 +190,76 @@ For every chart type the platform supports, the rules below are authoritative.
 - Use a single hue across all bars (color carries no info here); reserve color for highlighting one bar
 
 **Anti-patterns**:
-- Truncating Y-axis (deceptive — implies false magnitude differences)
+- Truncating Y-axis (deceptive — implies false magnitude differences). When values are tightly clustered making the bar useless, switch chart type per §4.2.1, don't truncate the bar's y-axis.
 - 3D bars (volume encoding is least accurate; never)
-- Rainbow colors per bar (color implies categorical meaning that doesn't exist)
+- Rainbow colors per bar WHEN cardinality > 10 (colors recycle and imply false grouping)
+
+### 4.2.1 The clustered-values rule (mandatory)
+
+When `(max - min) / max < 15%` AND `n_rows >= 3` for a bar chart, the visualizer
+**MUST switch from `bar` to `dot-plot`**. Reasoning:
+
+- Bar chart's value channel is *length*. When values cluster within 15% of each
+  other, the bar lengths look identical at chart scale — the encoding fails.
+- A common (but bad) workaround is truncating the y-axis. This breaks the
+  length-magnitude proportionality and is the canonical "lie factor" anti-pattern.
+- The correct fix is **dot-plot**: encode value via *position* (Cleveland-McGill
+  channel #1) instead of length. Position-along-axis with a non-zero baseline is
+  NOT deceptive — it's the canonical way to show small differences accurately.
+
+This auto-switch is in `backend/services/ai_service/visualizer.py` and is verified
+in the eval harness.
+
+### 4.2.2 The categorical-color allowance
+
+Skill §4.2 above says "single hue across all bars". This is the strict
+Tufte/Few view. We relax it for one specific case:
+
+- When `n_dimensions == 1` AND `dim.distinct_count <= 10` AND chart is bar /
+  horizontal-bar / dot-plot, we **DO** color by the categorical dimension
+  (using the categorical palette).
+- Reasoning: color hue is the *most accurate* channel for categorical data
+  (per Cleveland-McGill ranking). It carries real encoding (the category) and
+  helps with cross-filter UX (later, hover/filter highlighting works visually).
+- This is what Tableau and Looker do by default. We follow industry practice
+  here over Few's stricter view because the encoding adds information rather
+  than redundancy when paired with future cross-filter / drill-down interaction.
+
+Beyond 10 categories, colors recycle and the encoding becomes ambiguous —
+that's when single-hue + sorted bar is correct again.
 
 ### 4.3 Grouped (clustered) bar chart
 
 **Use when**: comparing one measure across two categorical dimensions, both with low cardinality (≤ 5 outer × ≤ 4 inner).
+**Also use when**: time × category data with **N_periods ≤ 4 AND N_categories ≤ 5** (see §4.6.1 for the full rationale).
 
 **Rules**:
-- Outer dimension on X axis
+- Outer dimension (or time, if it's the short axis) on X axis
 - Inner dimension as color hue
-- Sort outer dimension by total of inner values (or by named order)
+- Sort outer dimension by total of inner values (or by named order — for time, chronological)
 - Always include a legend for the color encoding
+- Bars in a group are touching; gap between groups = ~50% of bar width
 
 **Anti-patterns**:
 - Grouped bars when inner cardinality > 5 (user can't read the cluster)
 - Using grouped when totals matter — use stacked instead
+
+### 4.3.1 The 3-period × 5-category case (worked example)
+
+User asks: "number of orders by region over last 3 months over time."
+
+Result shape: `n_measures=1` (count), `n_dimensions=1` (region, 5 values), `has_time=true`, `n_periods=3` (months).
+
+**Wrong choice**: 5-line trend chart with color = region. The reader has to compare slopes across 5 lines that nearly overlap, with only 2 segments per line. Slope encoding wastes the channel when there's no continuous trend to perceive.
+
+**Right choice**: grouped bar.
+- X axis = month (3 buckets, chronological)
+- Within each month, 5 bars side by side (one per region)
+- Color hue encodes region (categorical palette)
+- Sort regions consistently across all groups (alphabetic OR by total descending — pick one and lock it)
+- Y axis = count, zero baseline (Rule R3)
+
+**Why**: with only 3 periods and 5 categories, the user's question is "*compare regions within each period*" — exact comparison via length on a common baseline is Cleveland-McGill's most-accurate channel. Multi-line wins only when N_periods grows large enough that trend shape becomes the story.
 
 ### 4.4 Stacked bar chart
 
@@ -281,12 +340,19 @@ For every chart type the platform supports, the rules below are authoritative.
 
 ### 4.10 Dot plot
 
-**Use when**: comparing a measure across many categories where bars would be too dense.
+**Use when** (in priority order):
+1. **Tightly-clustered values** where bar's length encoding would fail (per §4.2.1)
+2. Comparing a measure across many categories where bars would be too dense
+3. Showing exact rank order without the visual weight of full bars
 
 **Rules**:
-- Vertical (preferred) or horizontal arrangement
-- Sort by value
-- Use connecting lines from baseline only when zero is meaningful
+- Horizontal arrangement (categories on Y, value on X) preferred — easier to read long category labels
+- **Y-axis is NOT zero-based** — that's the whole point. Position-along-axis encodes value; non-zero baseline is canonically OK for position.
+- X-axis (the value axis) shows the data range with ~5–10% padding on each end.
+- Sort by value (descending)
+- Render as **lollipop**: thin connecting line from baseline (or category axis) to dot, with dot diameter ~12–14px and a 2px white stroke ring for separation
+- Categorical color from the standard palette when ≤ 10 categories (per §4.2.2)
+- Hover: tooltip shows category + formatted value; non-hovered dots dim to ~35% opacity
 
 ### 4.11 Scatter plot
 
@@ -454,12 +520,27 @@ Always render numbers with `font-feature-settings: "tnum"`. Frontend already has
 | Scatter | No |
 | Sparkline | No |
 
-### 7.2 X-axis ordering
+### 7.2 X-axis ordering (mandatory)
 
-- Time → chronological
-- Categorical with natural order (months, grades) → that order
-- Categorical without order → sort by Y value (descending) for bars
-- Continuous → numeric ascending
+The platform applies these rules in this priority order:
+
+1. **User-explicit `order` clause** — always wins.
+2. **Time axis** → chronological ASC (Jan → Dec, 1992 → 1998). Never reversed by default.
+3. **Detected ordinal pattern** — overrides server default. Patterns we auto-detect:
+   - Numeric prefix: `1-URGENT`, `2-HIGH`, `3-MEDIUM` → sorted by leading number
+   - Month names: `Jan`, `Feb`, `Mar` (or full names) → Jan-Dec order
+   - Day-of-week: `Mon`, `Tue` → Mon-Sun
+   - Quarters: `Q1`, `Q2`, `Q3`, `Q4` (with optional year suffix) → Q1→Q4 chronological
+   - Loyalty / size tiers: `Free / Starter / Growth / Enterprise`, `S / M / L / XL`, `Bronze / Silver / Gold / Platinum`, `Low / Medium / High / Critical` — sorted lower → higher
+   - TPC-H order status: `F` (finished) → `O` (open) → `P` (partial)
+4. **Nominal categorical (no detected order)** → DESC by first measure (Cleveland-McGill: ranking is information).
+5. **Continuous** → numeric ASC.
+
+The detection in #3 happens **client-side** in `PlotChart.tsx::detectOrdinalSort`. Adding a new pattern there formalizes it across all chart types.
+
+The default in #4 is enforced **server-side** in the DuckDB runners (and will be ported to the real Cube query layer in Phase 1) — this guarantees rows arrive in stable, meaningful order even if the chart layer never sorts.
+
+**Together these mean**: row order is always meaningful, never random. A user who runs the same query twice sees the same chart layout.
 
 ### 7.3 Labels
 
@@ -506,6 +587,63 @@ The visualizer must reject these even if requested explicitly (or warn loudly):
 | Donut without center label | Loses the value of the donut format | Add center label or use bar |
 | Word clouds | Position arbitrary, area encoding unreliable | Bar of word counts |
 | Gauges / speedometers | Wasted space; angle hard to read | Bullet chart |
+
+---
+
+## 9.5 Interaction patterns
+
+Visualizations are not posters — they're explorable. Every chart in the platform
+implements the following interactions (PlotChart enforces this via Plot's
+built-in marks + the `.plot-mark-hover` CSS layer):
+
+### 9.5.1 Hover tooltip (mandatory)
+
+Every chart with marks (bar, line, dot, scatter, heatmap, etc.) MUST show a
+tooltip on hover containing at minimum:
+- The categorical or temporal label (the X / row identifier)
+- The measure label + formatted value (`$1.2M`, `24.6%`, `12,345`)
+- Any additional encoded fields (color category, size value)
+
+Implementation: Plot's `tip: true` or `Plot.tip(rows, Plot.pointer({...}))` mark.
+Tooltip styling (dark theme, tabular numerals) is in `frontend/src/styles.css`.
+
+### 9.5.2 Hover highlight (mandatory)
+
+When the user hovers a mark:
+- The hovered mark scales 1.04× and goes to 100% opacity
+- Non-hovered marks fade to ~35% opacity (Tableau-style focus)
+- Transition duration: 180ms ease
+
+This makes ranking-by-value or visually scanning across categories easier.
+
+Implementation: CSS `.plot-mark-hover` class added to each mark, with `:has(:hover)`
+selectors driving the dim-others behavior.
+
+### 9.5.3 Click → cross-filter (when in dashboard)
+
+When a chart tile is on a dashboard:
+- Clicking a categorical mark (bar / pie slice / dot) emits a filter on that
+  dimension+value to all other tiles in the dashboard.
+- Visual feedback: the clicked mark gets a "selected" state (saturation = 100%,
+  others dim to 25%); other tiles show a "filtered by …" pill in their header.
+- Filters are URL-encoded so the state is shareable.
+
+### 9.5.4 Click → drill-down (in chat / workbook)
+
+In AI-rendered chat charts and workbench previews:
+- Clicking a mark opens a Workbook with the same query plus a filter on the
+  clicked dim+value.
+- This is the "drill-down" pattern — escape from a high-level chart into the
+  underlying detail in one click.
+
+### 9.5.5 Pointer-driven cross-hair (line/area only)
+
+For time-series charts, hovering anywhere on the plot area shows:
+- A vertical cross-hair line at the nearest x-tick
+- The value of every series at that x-position
+- Tooltip with all values + the date
+
+Plot does this natively via `Plot.tip(rows, Plot.pointerX({...}))`.
 
 ---
 
@@ -564,12 +702,113 @@ Invoke this skill (or follow its rules implicitly) when:
 
 ## 13. References
 
-- Cleveland, W. S. & McGill, R. (1984). *Graphical Perception: Theory, Experimentation, and Application to the Development of Graphical Methods.* Journal of the American Statistical Association.
-- Mackinlay, J. (1986). *Automating the Design of Graphical Presentations of Relational Information.* ACM TOG.
+- Cleveland, W. S. & McGill, R. (1984). *Graphical Perception: Theory, Experimentation, and Application to the Development of Graphical Methods.* JASA 79(387): 531–554.
+- Cleveland, W. S. (1985). *The Elements of Graphing Data.* Wadsworth.
+- Mackinlay, J. (1986). *Automating the Design of Graphical Presentations of Relational Information.* ACM TOG 5(2): 110–141.
 - Tufte, E. R. (1983). *The Visual Display of Quantitative Information.* Graphics Press.
-- Few, S. (2006). *Information Dashboard Design.* O'Reilly.
+- Tufte, E. R. (1990). *Envisioning Information.* Graphics Press.
+- Tufte, E. R. (2006). *Beautiful Evidence.* Graphics Press.
+- Few, S. (2006, 2013 2nd ed). *Information Dashboard Design.* O'Reilly / Analytics Press.
+- Few, S. (2008). *Dual-Scaled Axes in Graphs — Are They Ever the Best Solution?* Perceptual Edge.
 - Wilkinson, L. (2005). *The Grammar of Graphics.* Springer.
 - Munzner, T. (2014). *Visualization Analysis and Design.* CRC Press.
 - Datawrapper. (2023). *A friendly guide to choosing a chart type.* https://www.datawrapper.de/blog/chart-types-guide
+- Datawrapper Academy. *How to combine line and bar charts.* https://academy.datawrapper.de/article/266
+- Datawrapper Academy. *How to create a grouped bar chart.* https://academy.datawrapper.de/article/121
+- Observable. *When to use bar or line charts for time series data.* https://observablehq.com/blog/bars-vs-lines-time-series-data
 - Tableau. *Show Me — choose the right chart type for your data.* https://help.tableau.com/current/pro/desktop/en-us/what_chart_example.htm
 - Vega-Lite. *Mark and channel reference.* https://vega.github.io/vega-lite/
+
+---
+
+## 13a. The Tufte canon — the 14 prescriptive rules
+
+Source-grounded synthesis. Every rule has an "applies when" clause and a citation. These rules are normative: when the rest of the skill conflicts with one, the rule below wins (and the conflict is a bug in this skill — file it).
+
+### R1 — Position is king
+**Applies when**: encoding any quantitative variable on any chart.
+**Rule**: place the *primary* measure on a position channel along a common scale (Y on a vertical bar/line, X on a horizontal bar). Reserve length, angle, area, and color for secondary roles.
+**Source**: Cleveland & McGill (1984), perceptual ranking slot 1.
+
+### R2 — Encode by data type, not by chart-genre default
+**Applies when**: assigning a non-position variable to a channel.
+**Rule**:
+- Nominal → **color hue** (Mackinlay rank 2 for nominal).
+- Ordinal → **color saturation / lightness** or position-on-non-aligned-scale (Mackinlay ranks 2–3 for ordinal). Not hue.
+- Quantitative secondary → **length** (bar/dot), then **size/area** (bubble) only if X and Y are taken.
+**Source**: Mackinlay (1986), three-by-data-type effectiveness rankings.
+
+### R3 — Bars must have a zero baseline; lines need not
+**Applies when**: drawing a bar/column chart vs. a line chart.
+**Rule**: a bar's *length* encodes magnitude → truncating its baseline distorts the encoding. A line's *slope* encodes change → starting near the data range is fine and often clearer. **Bars: always zero. Lines: never required to start at zero.**
+**Source**: Tufte (1983) p. 57; Datawrapper chart guide.
+
+### R4 — The Lie Factor envelope
+**Applies when**: reviewing or auto-generating any chart's axis configuration.
+**Rule**: `Lie Factor = (visual effect) / (data effect)` must lie within `[0.95, 1.05]`. Reject any axis transform, 3D effect, or aspect-ratio choice that pushes outside this band.
+**Source**: Tufte (1983) p. 57.
+
+### R5 — Maximize data-ink, erase redundant ink
+**Applies when**: every chart, every render.
+**Rule**: every pixel that doesn't represent a datum or label is suspect. Specifically erase: chart borders, redundant tick marks, gridlines on bar charts, drop shadows, 3D bevels, gradient fills, and category-color legends when categories are already labeled inline.
+**Source**: Tufte (1983) ch. 4 (the five data-ink principles).
+
+### R6 — No chartjunk
+**Applies when**: tempted to add a "decorative" element.
+**Rule**: reject moiré vibrations, heavy decorative grids, "self-promoting" graphics (logos eating tile real estate), and ducks (charts dressed as pictures of their subject). 3D bars, 3D pies, and gauge skeuomorphism are chartjunk.
+**Source**: Tufte (1983) ch. 5.
+
+### R7 — Small multiples for any series count > 5
+**Applies when**: time series with > 5 series, or comparison across > 5 categories of the same shape.
+**Rule**: replace the multi-line "spaghetti" chart with small multiples — one panel per series, **shared X and Y scales**, sorted by a meaningful order (alphabetic, total, or recent change). Cap at 3–4 columns.
+**Source**: Tufte (1983); Tufte, *Envisioning Information* (1990) ch. 4.
+
+### R8 — Sparklines: data-words, no chrome
+**Applies when**: putting a trend in-line with text, in a KPI tile, or in a table cell.
+**Rule**: render with no axes, no gridlines, no labels, single muted hue. Width ≤ 100 px, height ≤ 30 px. The surrounding label or column header supplies the units.
+**Source**: Tufte, *Beautiful Evidence* (2006) ch. 2.
+
+### R9 — Few's two-goal dashboard rule
+**Applies when**: laying out a dashboard.
+**Rule**: (1) reduce non-data pixels — neutral palette, thin grid, no boxes-around-boxes. (2) Enhance data pixels — reserve hue and intensity for points the viewer must notice. Operationalized: 90% of dashboard ink is neutral gray; 10% is the accent color reserved for KPIs and threshold violations.
+**Source**: Few (2006, 2013) *Information Dashboard Design*.
+
+### R10 — Color for emphasis, not enumeration
+**Applies when**: > ~10 categorical values would otherwise each get a hue.
+**Rule**: beyond ~10 categories, hues recycle and stop encoding identity. Switch to a single hue + sorted positions, and reserve color for the one bar/line being highlighted.
+**Source**: Few (2006) ch. 4; Cleveland & McGill (1984), hue is rank ~7 for quantitative decoding.
+
+### R11 — Line vs. grouped-bar — the named decision
+**Applies when**: time × category data; intent = comparison.
+**Rule**:
+- **N_periods ≤ 4 AND N_categories ≤ 5** → **grouped bar** (categories as color, time as X).
+- **N_periods ≥ 5** OR time is densely / continuously sampled → **multi-line** (color = category, X = time).
+- **N_categories > 5** with continuous time → **small multiples line**, one panel per category.
+- If lines cross each other > ~3 times in the visible range → **small multiples**, regardless of N.
+
+**Why**: bars encode magnitude via length and dominate when the reader needs *exact* comparisons across a small set of discrete time points. Lines encode trend via slope and dominate when the reader needs to see the shape of change over many points. **The 3-period × 5-region case is grouped bar.** See worked example in §4.3.1.
+
+**Source**: Datawrapper chart guide (2023); Datawrapper Academy article 266 ("How to combine line and bar charts"); Observable, "When to use bar or line charts for time series data"; Cleveland & McGill (1984) — length encodes magnitude better than slope at low resolution.
+
+### R12 — Pie/donut: ≤ 6 slices, true part-to-whole only
+**Applies when**: tempted to use a pie/donut.
+**Rule**: ≤ 6 slices; total must equal the whole; never use to compare two pies side by side (use a 100%-stacked bar instead). Donut > pie because the hole holds the total. Always label both percentage and absolute value.
+**Source**: Cleveland & McGill (1984) (angle rank ~3, area rank ~4); Datawrapper chart guide ("a 3% difference between two categories can be easy to spot in a bar chart, but practically invisible in a pie or donut").
+
+### R13 — No dual Y-axis
+**Applies when**: tempted to overlay two measures on different scales on one chart.
+**Rule**: reject. Dual axes invite spurious correlation reading because the relative slopes are arbitrary. Use small multiples (shared X, separate Y) or normalize both measures to % change vs. baseline.
+**Source**: Few (2006) ch. 3; Few (2008), *Dual-Scaled Axes in Graphs*.
+
+### R14 — Clustered-values switch
+**Applies when**: bar chart where `(max - min) / max < 15%` AND `n_rows ≥ 3`.
+**Rule**: switch from bar to **dot plot / lollipop**. Bar's length channel fails when values cluster within 15%; the bars look identical at chart scale. The truncated-axis "fix" violates R3. Dot plot encodes via *position* (rank 1) on a non-zero scale, which is canonically OK for position. This auto-switch is in `backend/services/ai_service/visualizer.py` and is verified in the eval harness.
+**Source**: Cleveland & McGill (1984); Cleveland (1985) *The Elements of Graphing Data* ch. 3 (dot plot as bar substitute).
+
+---
+
+### How to use this canon
+
+- The decision tree in §3 is the executable form. Each branch should be traceable to one or more rules above.
+- The chart-by-chart guide in §4 is the per-type elaboration. When updating §4 rules, make sure no new rule contradicts §13a.
+- When a new chart type is added (e.g., dumbbell, calendar heatmap, Markdown viz) it MUST cite which of R1–R14 it follows or knowingly relaxes (and why).

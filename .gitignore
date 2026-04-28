@@ -22,6 +22,12 @@ dist/
 *.tsbuildinfo
 .npm/
 
+# Playwright
+frontend/test-results/
+frontend/.playwright/
+frontend/playwright-report/
+backend/test-results/
+
 # Env
 .env
 .env.local

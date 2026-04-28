@@ -1,0 +1,63 @@
+cubes:
+  - name: LoanOfficer
+    sql_table: main.loan_officers
+    description: |
+      Bank employees who originate / own loans. Used for officer-level
+      performance, productivity, and specialty analysis.
+    meta:
+      ai_facing: true
+      vertical: lending
+      domain: people
+
+    joins:
+      - name: Branch
+        sql: "{CUBE}.branch_id = {Branch}.branch_id"
+        relationship: many_to_one
+
+    dimensions:
+      - name: id
+        sql: officer_id
+        type: number
+        primary_key: true
+      - name: code
+        sql: officer_code
+        type: string
+      - name: name
+        sql: officer_name
+        type: string
+      - name: branch_id
+        sql: branch_id
+        type: number
+      - name: hire_date
+        sql: hire_date
+        type: time
+        granularities:
+          - {name: month, interval: 1 month}
+          - {name: quarter, interval: 1 quarter}
+          - {name: year, interval: 1 year}
+      - name: specialty
+        sql: specialty
+        type: string
+        description: "Primary product specialty for this officer"
+        meta:
+          enum_values: [Personal, Auto, Home Improvement, Debt Consolidation]
+          synonyms: [product, specialty, focus]
+      - name: status
+        sql: status
+        type: string
+        meta:
+          enum_values: [active, inactive]
+
+    measures:
+      - name: count
+        sql: officer_id
+        type: count_distinct
+        description: "Number of loan officers"
+        meta:
+          synonyms: [officers, employees, headcount]
+      - name: active_count
+        sql: officer_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status = 'active'"
+        description: "Count of active officers"

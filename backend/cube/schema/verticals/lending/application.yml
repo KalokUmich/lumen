@@ -1,0 +1,153 @@
+cubes:
+  - name: Application
+    sql_table: main.applications
+    description: |
+      Loan applications, including those that are Approved, Declined, or
+      Abandoned. The top of the funnel — every loan starts as an
+      application. Used for funnel, decline-reason, and channel analysis.
+    meta:
+      ai_facing: true
+      vertical: lending
+      domain: origination
+
+    joins:
+      - name: Customer
+        sql: "{CUBE}.customer_id = {Customer}.customer_id"
+        relationship: many_to_one
+
+    dimensions:
+      - name: id
+        sql: application_id
+        type: number
+        primary_key: true
+      - name: code
+        sql: application_code
+        type: string
+      - name: customer_id
+        sql: customer_id
+        type: number
+      - name: product_type
+        sql: product_type
+        type: string
+        description: "Loan product the customer applied for"
+        meta:
+          enum_values: [Personal Loan, Auto Loan, Home Improvement, Debt Consolidation]
+          synonyms: [product, loan type, product type]
+      - name: status
+        sql: status
+        type: string
+        description: "Outcome of the application"
+        meta:
+          enum_values: [Approved, Declined, Abandoned]
+          synonyms: [outcome, decision, application status]
+      - name: decline_reason
+        sql: decline_reason
+        type: string
+        description: "Why the application was declined (NULL if not declined)"
+        meta:
+          enum_values:
+            - "Insufficient income"
+            - "Low credit score"
+            - "High DTI"
+            - "Insufficient history"
+            - "Verification failed"
+          synonyms: [decline reason, rejection reason, denial reason]
+      - name: channel
+        sql: channel
+        type: string
+        description: "Acquisition channel of the application"
+        meta:
+          enum_values: [Web, Mobile App, Branch, Phone, Partner]
+          synonyms: [channel, source, origin]
+      - name: requested_amount
+        sql: requested_amount
+        type: number
+        format: currency
+        description: "Loan amount the customer requested (USD)"
+      - name: requested_term_months
+        sql: requested_term_months
+        type: number
+        description: "Requested loan term in months"
+      - name: manual_review_flag
+        sql: manual_review_flag
+        type: boolean
+        description: "Whether the application was sent to manual review"
+      - name: application_date
+        sql: application_date
+        type: time
+        description: "When the application was submitted"
+        granularities:
+          - {name: day, interval: 1 day}
+          - {name: week, interval: 1 week}
+          - {name: month, interval: 1 month}
+          - {name: quarter, interval: 1 quarter}
+          - {name: year, interval: 1 year}
+
+    measures:
+      - name: count
+        sql: application_id
+        type: count_distinct
+        description: "Number of applications"
+        meta:
+          synonyms: [applications, applies, app count, submissions]
+          example_questions:
+            - "Application volume by month"
+            - "How many applications did we get last quarter?"
+      - name: approved_count
+        sql: application_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status = 'Approved'"
+      - name: declined_count
+        sql: application_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status = 'Declined'"
+      - name: abandoned_count
+        sql: application_id
+        type: count_distinct
+        filters:
+          - sql: "{CUBE}.status = 'Abandoned'"
+      - name: approval_rate
+        sql: "AVG(CASE WHEN {CUBE}.status = 'Approved' THEN 1.0 ELSE 0 END)"
+        type: number
+        format: percent
+        description: "Share of applications that were approved (0-1)"
+        meta:
+          synonyms: [approval rate, approval %, approval ratio]
+          example_questions:
+            - "What's our approval rate?"
+            - "Approval rate by product"
+            - "Approval rate trend"
+      - name: total_requested
+        sql: requested_amount
+        type: sum
+        format: currency
+        description: "Total amount requested across applications (USD)"
+      - name: avg_requested_amount
+        sql: requested_amount
+        type: avg
+        format: currency
+        description: "Average requested amount per application"
+      - name: avg_decision_time_seconds
+        sql: decision_time_seconds
+        type: avg
+        description: "Average time to decision (seconds)"
+        meta:
+          synonyms: [decision time, time to decision, latency]
+      - name: manual_review_rate
+        sql: "AVG(CASE WHEN {CUBE}.manual_review_flag THEN 1.0 ELSE 0 END)"
+        type: number
+        format: percent
+        description: "Share of applications routed to manual review"
+
+    segments:
+      - name: approved
+        sql: "{CUBE}.status = 'Approved'"
+        description: "Approved applications only"
+      - name: declined
+        sql: "{CUBE}.status = 'Declined'"
+        description: "Declined applications only"
+      - name: high_value
+        sql: "{CUBE}.requested_amount >= 25000"
+        description: "Applications requesting $25k+"

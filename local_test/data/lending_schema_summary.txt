@@ -1,0 +1,169 @@
+# Cube Semantic Model — Consumer Lending Vertical
+
+This workspace models a consumer-lending business: applications, loan
+originations, repayments, collections, and credit-bureau pulls. Time
+horizon: 2018-01-01 → 2026-04-27.
+
+## Cube: Customer
+Description: Borrowers / applicants. ~1M people.
+- Customer.state (string) — US 2-letter state code
+    synonyms: [state, region, geo]
+- Customer.employment_type (string) — Salaried/Self-employed/Hourly/Retired/Contractor/Unemployed
+    synonyms: [employment, job type]
+- Customer.annual_income (number, currency) — self-reported annual income (USD)
+    synonyms: [income, salary]
+- Customer.fico_score (number) — FICO credit score 300-850
+    synonyms: [fico, credit score]
+- Customer.credit_tier (string) — Prime/Near-prime/Sub-prime/Deep sub-prime
+    synonyms: [tier, credit tier, risk band, risk segment]
+    ai_hint: "Use this when the user says 'risk band' or 'credit segment'"
+- Customer.acquisition_channel (string) — Web/Mobile App/Branch/Phone/Partner Referral
+    synonyms: [channel, acquisition, source]
+- Customer.is_homeowner (boolean) — owns home
+- Customer.signup_cohort_year (number) — year customer first signed up
+- Customer.signup_date (time) — date customer was acquired
+- Customer.count (count_distinct customer_id) — number of unique customers
+    synonyms: [customers, borrowers, customer count]
+- Customer.avg_fico (avg fico_score) — average FICO score
+    synonyms: [average fico, mean credit score]
+- Customer.avg_annual_income (avg annual_income, currency) — average income
+- Customer.median_annual_income (median annual_income, currency)
+- Customer.prime_count (count_distinct, filtered) — count of Prime-tier customers
+- Customer.subprime_count (count_distinct, filtered) — count of sub-prime customers
+- Customer.homeowner_rate (avg, percent) — share who own a home
+Segments: prime, subprime, high_income.
+
+## Cube: Branch
+Description: Physical office locations. 200 branches across 5 US regions.
+- Branch.name (string) — branch name
+- Branch.region (string) — Northeast/Southeast/Midwest/Southwest/West
+    synonyms: [region, area, division]
+- Branch.state (string) — US state
+- Branch.opened_date (time) — branch opening date
+- Branch.headcount (number) — employees at the branch
+- Branch.count (count_distinct branch_id) — number of branches
+- Branch.total_headcount (sum headcount) — total employees
+
+## Cube: LoanOfficer
+Description: Bank employees who own loans. 5K officers.
+- LoanOfficer.name (string) — officer's name
+- LoanOfficer.specialty (string) — Personal/Auto/Home Improvement/Debt Consolidation
+- LoanOfficer.status (string) — active/inactive
+- LoanOfficer.hire_date (time)
+- LoanOfficer.count (count_distinct officer_id) — number of officers
+- LoanOfficer.active_count (count_distinct, filtered) — currently active officers
+- Joins to Branch via branch_id
+
+## Cube: Application
+Description: Loan applications (Approved / Declined / Abandoned). Top of funnel.
+- Application.product_type (string) — Personal Loan/Auto Loan/Home Improvement/Debt Consolidation
+    synonyms: [product, loan type, product type]
+- Application.status (string) — Approved/Declined/Abandoned
+    synonyms: [outcome, decision]
+- Application.decline_reason (string) — Insufficient income/Low credit score/High DTI/...
+- Application.channel (string) — Web/Mobile App/Branch/Phone/Partner
+- Application.requested_amount (number, currency) — amount requested
+- Application.application_date (time) — when submitted
+- Application.count (count_distinct application_id) — number of applications
+    synonyms: [applications, applies, submissions]
+- Application.approved_count (count_distinct, filtered)
+- Application.declined_count (count_distinct, filtered)
+- Application.abandoned_count (count_distinct, filtered)
+- Application.approval_rate (avg, percent) — share approved (0-1)
+    synonyms: [approval rate, approval %, approval ratio]
+- Application.total_requested (sum requested_amount, currency)
+- Application.avg_requested_amount (avg requested_amount, currency)
+- Application.avg_decision_time_seconds (avg) — time to decision in seconds
+- Application.manual_review_rate (avg, percent) — share routed to manual review
+Segments: approved, declined, high_value.
+- Joins to Customer via customer_id
+
+## Cube: Loan
+Description: Funded loans. Core fact table for origination and risk.
+- Loan.product_type (string) — Personal/Auto/Home Improvement/Debt Consolidation
+- Loan.grade (string) — A (best) → G (worst)
+    synonyms: [grade, risk grade, credit grade]
+    ai_hint: "Lower letters are higher quality. A is prime."
+- Loan.subgrade (string) — letter + 1-5 sub-tier
+- Loan.purpose (string) — Debt consolidation/Credit card refinance/Home improvement/Major purchase/Medical/Other
+    synonyms: [purpose, reason, use of funds]
+- Loan.status (string) — current/paid_off/late_31_120/default/charged_off
+    synonyms: [status, loan status]
+    ai_hint: "current+paid_off are good; late/default/charged_off are delinquent"
+- Loan.term_months (number) — loan term in months
+- Loan.loan_amount (number, currency) — funded principal
+- Loan.interest_rate_pct (number) — APR as percentage
+    synonyms: [interest rate, apr, rate]
+- Loan.origination_date (time) — date loan was funded
+- Loan.count (count_distinct loan_id) — number of funded loans
+    synonyms: [loans, num loans, loan count, originations]
+- Loan.total_originated (sum loan_amount, currency) — total principal originated
+    synonyms: [originations, origination volume, funded amount, principal]
+- Loan.avg_loan_amount (avg loan_amount, currency)
+    synonyms: [average loan, avg loan size]
+- Loan.avg_interest_rate (avg interest_rate_pct) — average APR
+    synonyms: [average rate, avg apr]
+- Loan.weighted_avg_rate (number) — loan-amount-weighted average APR
+    synonyms: [WAC, weighted average coupon]
+- Loan.default_count (count_distinct, filtered)
+- Loan.default_rate (avg, percent) — share in default or charged off
+    synonyms: [default rate, charge-off rate, loss rate, bad rate]
+- Loan.delinquency_rate (avg, percent) — share 31+ days past due
+    synonyms: [delinquency, dq rate, past due rate]
+- Loan.paid_off_count (count_distinct, filtered)
+- Loan.charged_off_amount (sum loan_amount, currency, filtered)
+    synonyms: [losses, write-offs, charge-offs]
+Segments: prime_grade, subprime_grade, delinquent, performing.
+- Joins to Customer via customer_id
+- Joins to Branch via branch_id
+- Joins to LoanOfficer via officer_id
+- Joins to Application via application_id
+
+## Cube: Payment
+Description: Loan repayment events. Cash collected, principal paydown, interest income.
+- Payment.payment_method (string) — ACH/Card/Check/Wire
+    synonyms: [method, channel, payment channel]
+- Payment.is_late (boolean) — payment was received late
+- Payment.scheduled_date (time) — scheduled date per amortization
+- Payment.actual_payment_date (time) — actual receipt date (NULL if missed)
+- Payment.count (count_distinct payment_id) — number of payments
+- Payment.total_received (sum payment_amount, currency) — total cash collected
+    synonyms: [collections, cash collected, payments received]
+- Payment.total_principal (sum principal_amount, currency)
+- Payment.total_interest (sum interest_amount, currency)
+    synonyms: [interest revenue, interest income]
+- Payment.total_late_fees (sum late_fee, currency)
+- Payment.avg_payment_amount (avg payment_amount, currency)
+- Payment.late_payment_count (count_distinct, filtered)
+- Payment.late_payment_rate (avg, percent) — share received late
+    synonyms: [late rate, late payment rate]
+Segments: late, card_payments.
+- Joins to Loan via loan_id
+- Joins to Customer via customer_id
+
+## Cube: Collection
+Description: Charge-off / recovery cases on delinquent loans.
+- Collection.channel (string) — Internal/External Agency/Legal/Sold
+- Collection.status (string) — recovered/partial_recovery/in_collection/written_off
+- Collection.opened_date (time) — when case was opened
+- Collection.closed_date (time) — when resolved (NULL if open)
+- Collection.count (count_distinct collection_id) — number of cases
+- Collection.total_recovered (sum amount_recovered, currency)
+    synonyms: [recoveries, recovered, recovery amount]
+- Collection.total_charged_off (sum amount_charged_off, currency)
+    synonyms: [charge-offs, write-offs, losses]
+- Collection.recovery_rate (number, percent) — recovered / charged_off
+Segments: open_cases, closed_cases.
+- Joins to Loan via loan_id
+
+## Cube: CreditInquiry
+Description: Credit-bureau pulls (soft, hard, pre-screen).
+- CreditInquiry.bureau (string) — Equifax/Experian/TransUnion/Internal
+- CreditInquiry.inquiry_type (string) — Soft/Hard/Pre-screen
+- CreditInquiry.score_at_inquiry (number) — bureau score at inquiry
+- CreditInquiry.inquiry_date (time)
+- CreditInquiry.count (count_distinct inquiry_id) — number of inquiries
+    synonyms: [inquiries, pulls]
+- CreditInquiry.hard_inquiry_count (count_distinct, filtered)
+- CreditInquiry.avg_score_at_inquiry (avg score_at_inquiry)
+- Joins to Customer via customer_id

@@ -4,7 +4,7 @@
  * measures / dimensions / segments as click-to-add tokens.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as React from "react";
 import clsx from "clsx";
 import { ChevronDown, ChevronRight, Hash, Calendar, Tag, Layers, BarChart2 } from "lucide-react";
@@ -16,10 +16,18 @@ type Props = {
 };
 
 export function FieldPicker({ schemas, onAdd }: Props) {
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(schemas.slice(0, 2).map((c) => c.name))
-  );
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState("");
+
+  // Expand the first two cubes once schemas first arrive — the original
+  // useState initializer ran when `schemas` was still empty (loading state).
+  useEffect(() => {
+    if (schemas.length === 0) return;
+    setExpanded((prev) => {
+      if (prev.size > 0) return prev;
+      return new Set(schemas.slice(0, 2).map((c) => c.name));
+    });
+  }, [schemas]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return schemas;
@@ -78,6 +86,7 @@ export function FieldPicker({ schemas, onAdd }: Props) {
                         <FieldRow
                           key={m.fullName}
                           member={m}
+                          kind="measure"
                           icon={<BarChart2 className="h-3 w-3 text-success" />}
                           onClick={() => onAdd("measure", m)}
                         />
@@ -90,6 +99,7 @@ export function FieldPicker({ schemas, onAdd }: Props) {
                         <FieldRow
                           key={m.fullName}
                           member={m}
+                          kind="timeDimension"
                           icon={<Calendar className="h-3 w-3 text-accent" />}
                           onClick={() => onAdd("timeDimension", m)}
                         />
@@ -102,6 +112,7 @@ export function FieldPicker({ schemas, onAdd }: Props) {
                         <FieldRow
                           key={m.fullName}
                           member={m}
+                          kind="dimension"
                           icon={<Hash className="h-3 w-3 text-warning" />}
                           onClick={() => onAdd("dimension", m)}
                         />
@@ -114,6 +125,7 @@ export function FieldPicker({ schemas, onAdd }: Props) {
                         <FieldRow
                           key={m.fullName}
                           member={m}
+                          kind="segment"
                           icon={<Tag className="h-3 w-3 text-fg-muted" />}
                           onClick={() => onAdd("segment", m)}
                         />
@@ -139,13 +151,23 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** MIME type for field drag payloads. Workbench drop targets read this. */
+export const FIELD_DND_MIME = "application/x-lumen-field";
+
+export type FieldDragPayload = {
+  kind: "measure" | "dimension" | "timeDimension" | "segment";
+  fullName: string;
+};
+
 function FieldRow({
   member,
   icon,
+  kind,
   onClick,
 }: {
   member: SchemaMember;
   icon: React.ReactNode;
+  kind: "measure" | "dimension" | "timeDimension" | "segment";
   onClick: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -156,11 +178,19 @@ function FieldRow({
       onMouseLeave={() => setHovered(false)}
     >
       <button
+        draggable
+        onDragStart={(e) => {
+          const payload: FieldDragPayload = { kind, fullName: member.fullName };
+          e.dataTransfer.setData(FIELD_DND_MIME, JSON.stringify(payload));
+          e.dataTransfer.effectAllowed = "copy";
+        }}
         onClick={onClick}
         className={clsx(
           "flex w-full items-center gap-2 px-2 py-1 text-left text-xs",
-          "text-fg-muted hover:bg-bg-subtle hover:text-fg"
+          "text-fg-muted hover:bg-bg-subtle hover:text-fg",
+          "cursor-grab active:cursor-grabbing"
         )}
+        data-testid={`field-row-${kind}-${member.fullName}`}
       >
         {icon}
         <span className="truncate">{member.name}</span>

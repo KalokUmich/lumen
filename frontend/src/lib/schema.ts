@@ -122,7 +122,11 @@ export function parseSchema(text: string): CubeSchema[] {
       const name = m[2];
       const type = m[3].trim();
       const rest = m[4] ?? "";
-      const metaStr = rest.match(/\[([^\]]+)\]/)?.[1];
+      // Greedy match — captures up to the LAST `]` on the line. Important
+      // because meta values can themselves contain bracketed lists like
+      // `enum_values: ['F', 'O', 'P']`. Non-greedy would stop at the first
+      // inner `]` and miss the rest.
+      const metaStr = rest.match(/\[(.+)\]/)?.[1];
       const parsedMeta = parseMetaString(metaStr);
       const member: SchemaMember = {
         cube,
@@ -155,4 +159,21 @@ export function parseSchema(text: string): CubeSchema[] {
 
   if (current) cubes.push(current);
   return cubes;
+}
+
+/**
+ * Look up a member by its `Cube.field` full name across all parsed cubes.
+ * Returns undefined if not found.
+ */
+export function lookupSchemaMember(
+  schemas: CubeSchema[],
+  fullName: string,
+): SchemaMember | undefined {
+  for (const c of schemas) {
+    for (const arr of [c.measures, c.dimensions, c.timeDimensions, c.segments]) {
+      const hit = arr.find((m) => m.fullName === fullName);
+      if (hit) return hit;
+    }
+  }
+  return undefined;
 }

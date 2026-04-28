@@ -31,11 +31,28 @@ export type Workspace = {
   llm_preset: string;
 };
 
+export type QueryMeta = {
+  ms?: number;
+  rows?: number;
+  cache_hit?: boolean;
+  vertical?: string;
+  backend?: string;
+};
+
+export type AgentSkill = {
+  name: string;
+  label?: string;
+  description?: string;
+  prompt: string;
+  input?: boolean;
+};
+
 export type SchemaBundle = {
   workspace_id: string;
   vertical: string;
   schema_summary: string;
   glossary: string;
+  skills?: AgentSkill[];
 };
 
 export async function listWorkspaces(): Promise<Workspace[]> {
@@ -89,6 +106,143 @@ export async function getProvidersHealth(): Promise<unknown> {
   return r.json();
 }
 
+// ── Chat session persistence ──────────────────────────────────────────────────
+
+export type ChatSessionRecord = {
+  id: string;
+  title: string | null;
+  created_at: string | null;
+};
+
+export type StoredChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: Record<string, unknown>;
+  tier_used: string | null;
+  provider_used: string | null;
+  tokens_input: number | null;
+  tokens_output: number | null;
+  created_at: string | null;
+};
+
+export async function listChatSessions(workspaceId: string): Promise<ChatSessionRecord[]> {
+  const r = await fetch(`/api/v1/chat/sessions?workspace_id=${workspaceId}`, {
+    headers: authHeaders(),
+  });
+  if (!r.ok) throw new Error(`chat sessions: ${r.status}`);
+  return r.json();
+}
+
+export async function createChatSession(workspaceId: string, title?: string): Promise<{ id: string; title: string | null }> {
+  const r = await fetch("/api/v1/chat/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ workspace_id: workspaceId, title }),
+  });
+  if (!r.ok) throw new Error(`createChatSession: ${r.status}`);
+  return r.json();
+}
+
+export async function listChatMessages(sessionId: string): Promise<StoredChatMessage[]> {
+  const r = await fetch(`/api/v1/chat/sessions/${sessionId}/messages`, {
+    headers: authHeaders(),
+  });
+  if (!r.ok) throw new Error(`chat messages: ${r.status}`);
+  return r.json();
+}
+
+export async function appendChatMessage(
+  sessionId: string,
+  msg: { role: "user" | "assistant"; content: Record<string, unknown> | string; tier_used?: string; provider_used?: string; tokens_input?: number; tokens_output?: number },
+): Promise<{ id: string }> {
+  const r = await fetch(`/api/v1/chat/sessions/${sessionId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify(msg),
+  });
+  if (!r.ok) throw new Error(`appendChatMessage: ${r.status}`);
+  return r.json();
+}
+
+// ── Model editor ─────────────────────────────────────────────────────────────
+
+export type ModelFileEntry = {
+  path: string;
+  size: number;
+  vertical: string | null;
+};
+
+export type ModelValidationResult = {
+  valid: boolean;
+  errors: { line: number | null; column: number | null; message: string }[];
+  warnings: { line: number | null; column: number | null; message: string }[];
+};
+
+export type ModelLocation = {
+  path: string;
+  line: number;
+  cube: string;
+  field: string;
+};
+
+export async function listModelFiles(): Promise<ModelFileEntry[]> {
+  const r = await fetch("/api/v1/model/files", { headers: authHeaders() });
+  if (!r.ok) throw new Error(`listModelFiles: ${r.status}`);
+  return r.json();
+}
+
+export async function getModelFile(path: string): Promise<{ path: string; content: string }> {
+  const r = await fetch(`/api/v1/model/files/${path}`, { headers: authHeaders() });
+  if (!r.ok) throw new Error(`getModelFile: ${r.status}`);
+  return r.json();
+}
+
+export async function saveModelFile(path: string, content: string): Promise<{ path: string; size: number }> {
+  const r = await fetch(`/api/v1/model/files/${path}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ content }),
+  });
+  if (!r.ok) {
+    let detail = "";
+    try {
+      const body = await r.json();
+      detail = body.detail ?? "";
+    } catch {
+      // ignore
+    }
+    throw new Error(`saveModelFile: ${r.status}${detail ? ` — ${detail}` : ""}`);
+  }
+  return r.json();
+}
+
+export async function validateModelContent(content: string): Promise<ModelValidationResult> {
+  const r = await fetch("/api/v1/model/validate", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ content }),
+  });
+  if (!r.ok) throw new Error(`validateModelContent: ${r.status}`);
+  return r.json();
+}
+
+export async function locateMember(member: string): Promise<ModelLocation | null> {
+  const r = await fetch(`/api/v1/model/locate?member=${encodeURIComponent(member)}`, {
+    headers: authHeaders(),
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`locateMember: ${r.status}`);
+  return r.json();
+}
+
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  const r = await fetch(`/api/v1/chat/sessions/${sessionId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!r.ok) throw new Error(`deleteChatSession: ${r.status}`);
+}
+
 export type CubeQuery = {
   measures?: string[];
   dimensions?: string[];
@@ -105,7 +259,12 @@ export type CubeQuery = {
 
 export async function runQuery(
   cubeQuery: CubeQuery
-): Promise<{ data: Record<string, unknown>[]; annotation: Record<string, unknown> }> {
+): Promise<{
+  data: Record<string, unknown>[];
+  annotation: Record<string, unknown>;
+  sql?: string;
+  meta?: QueryMeta;
+}> {
   const r = await fetch("/api/v1/queries/run", {
     method: "POST",
     headers: { "content-type": "application/json", ...authHeaders() },

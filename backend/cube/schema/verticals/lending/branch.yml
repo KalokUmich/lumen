@@ -1,0 +1,55 @@
+cubes:
+  - name: Branch
+    sql_table: main.branches
+    description: |
+      Physical branch offices. Each loan is booked through one branch.
+      Used for regional / branch-level performance analysis.
+    meta:
+      ai_facing: true
+      vertical: lending
+      domain: geography
+
+    dimensions:
+      - name: id
+        sql: branch_id
+        type: number
+        primary_key: true
+      - name: code
+        sql: branch_code
+        type: string
+      - name: name
+        sql: branch_name
+        type: string
+      - name: region
+        sql: region
+        type: string
+        description: "US macro region the branch belongs to"
+        meta:
+          enum_values: [Northeast, Southeast, Midwest, Southwest, West]
+          synonyms: [region, area, division]
+      - name: state
+        sql: state
+        type: string
+        description: "US state code where the branch is located"
+      - name: opened_date
+        sql: opened_date
+        type: time
+        description: "Date the branch opened"
+        granularities:
+          - {name: day, interval: 1 day}
+          - {name: month, interval: 1 month}
+          - {name: year, interval: 1 year}
+      - name: headcount
+        sql: headcount
+        type: number
+        description: "Number of employees at this branch"
+
+    measures:
+      - name: count
+        sql: branch_id
+        type: count_distinct
+        description: "Number of branches"
+      - name: total_headcount
+        sql: headcount
+        type: sum
+        description: "Sum of headcount across selected branches"

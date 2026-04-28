@@ -77,26 +77,50 @@ export function formatExact(value: unknown, fmt?: ValueFormat, currency: string 
   return n.toLocaleString();
 }
 
-export function formatDate(value: unknown, granularity?: string): string {
-  if (!value) return "—";
-  let d: Date;
-  if (value instanceof Date) d = value;
-  else if (typeof value === "string") d = new Date(value);
-  else if (typeof value === "number") d = new Date(value);
-  else return String(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-
-  const opts: Intl.DateTimeFormatOptions = {
-    year: "numeric",
-    month: "short",
-  };
-  if (granularity === "day" || granularity === "week") {
-    opts.day = "numeric";
-  } else if (granularity === "year") {
-    delete opts.month;
-  } else if (granularity === "quarter") {
-    const q = Math.floor(d.getMonth() / 3) + 1;
-    return `Q${q} ${d.getFullYear()}`;
+/**
+ * Parse a value into a Date, handling the common "YYYY-MM-DD" wire format
+ * locally (not as UTC midnight) so the date doesn't shift by a day when the
+ * user's timezone is west of UTC.
+ */
+export function parseDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === "number") return new Date(value);
+  if (typeof value === "string") {
+    // "YYYY-MM-DD" — treat as LOCAL date, not UTC, to avoid TZ off-by-one.
+    const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+    // ISO with time — let Date parse, but strip any trailing "T00:00:00" first
+    // for the (rare) case where backend didn't strip it.
+    const stripped = value.replace(/T00:00:00(?:\.0+)?(?:Z)?$/, "");
+    const cleanMatch = stripped.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (cleanMatch) {
+      return new Date(parseInt(cleanMatch[1], 10), parseInt(cleanMatch[2], 10) - 1, parseInt(cleanMatch[3], 10));
+    }
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
-  return new Intl.DateTimeFormat("en-US", opts).format(d);
+  return null;
+}
+
+export function formatDate(value: unknown, granularity?: string): string {
+  if (value == null || value === "") return "—";
+  const d = parseDate(value);
+  if (!d) return String(value);
+
+  if (granularity === "year") {
+    return String(d.getFullYear());
+  }
+  if (granularity === "quarter") {
+    return `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`;
+  }
+  if (granularity === "week" || granularity === "day") {
+    return new Intl.DateTimeFormat("en-US", {
+      year: "numeric", month: "short", day: "numeric",
+    }).format(d);
+  }
+  // Default (month / unknown granularity) → "Jan 1998"
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric", month: "short",
+  }).format(d);
 }
