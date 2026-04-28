@@ -58,6 +58,7 @@ Thumbs.db
 *.duckdb.wal
 local_test/data/*.csv
 local_test/data/warehouse.duckdb*
+local_test/data/app.db
 
 # Logs
 *.log
