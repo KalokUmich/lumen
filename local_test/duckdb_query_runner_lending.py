@@ -1,9 +1,9 @@
 """Consumer-lending Cube query runner.
 
-Translates Cube query JSON into DuckDB SQL for the lending vertical.
-This is Lumen's primary fixture (replaces TPC-H + saas_finance).
+Translates Cube query JSON into DuckDB SQL for the lending vertical —
+Lumen's primary local fixture.
 
-Architecture mirrors duckdb_query_runner_tpch.py:
+Layout:
   - CUBE_TABLES   : Cube name → (alias, qualified table name)
   - JOINS         : Cube → list of (target_cube, ON clause)
   - DIMENSIONS    : "Cube.dim" → SQL expression
@@ -220,7 +220,7 @@ SEGMENTS: dict[str, str] = {
 }
 
 
-# ── Date range parsing — reuse the same set of phrases as TPC-H runner ──
+# ── Date range parsing ──
 _DATA_ANCHOR = date(2026, 4, 27)
 
 

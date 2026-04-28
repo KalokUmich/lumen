@@ -28,29 +28,29 @@ describe("Citations", () => {
 
   it("renders one chip per measure / dimension / time dim", () => {
     const q: CubeQuery = {
-      measures: ["LineItem.revenue"],
-      dimensions: ["Region.name"],
-      timeDimensions: [{ dimension: "Orders.order_date" }],
+      measures: ["Loan.total_originated"],
+      dimensions: ["Branch.name"],
+      timeDimensions: [{ dimension: "Loan.originated_at" }],
     };
     render(<Citations cubeQuery={q} />);
-    expect(screen.getByTestId("citation-LineItem.revenue")).toBeInTheDocument();
-    expect(screen.getByTestId("citation-Region.name")).toBeInTheDocument();
-    expect(screen.getByTestId("citation-Orders.order_date")).toBeInTheDocument();
+    expect(screen.getByTestId("citation-Loan.total_originated")).toBeInTheDocument();
+    expect(screen.getByTestId("citation-Branch.name")).toBeInTheDocument();
+    expect(screen.getByTestId("citation-Loan.originated_at")).toBeInTheDocument();
   });
 
   it("calls locateMember + setPendingModelJump on click", async () => {
     locateMock.mockResolvedValueOnce({
-      path: "verticals/tpch/orders.yml",
+      path: "verticals/lending/loan.yml",
       line: 14,
-      cube: "Orders",
-      field: "order_date",
+      cube: "Loan",
+      field: "originated_at",
     });
-    render(<Citations cubeQuery={{ measures: ["Orders.count"] }} />);
-    fireEvent.click(screen.getByTestId("citation-Orders.count"));
-    await waitFor(() => expect(locateMock).toHaveBeenCalledWith("Orders.count"));
+    render(<Citations cubeQuery={{ measures: ["Loan.count"] }} />);
+    fireEvent.click(screen.getByTestId("citation-Loan.count"));
+    await waitFor(() => expect(locateMock).toHaveBeenCalledWith("Loan.count"));
     await waitFor(() =>
       expect(setPendingModelJump).toHaveBeenCalledWith({
-        path: "verticals/tpch/orders.yml",
+        path: "verticals/lending/loan.yml",
         line: 14,
       }),
     );
@@ -58,8 +58,8 @@ describe("Citations", () => {
 
   it("does not throw when locate returns null (member not found)", async () => {
     locateMock.mockResolvedValueOnce(null);
-    render(<Citations cubeQuery={{ measures: ["Orders.unknown"] }} />);
-    fireEvent.click(screen.getByTestId("citation-Orders.unknown"));
+    render(<Citations cubeQuery={{ measures: ["Loan.unknown"] }} />);
+    fireEvent.click(screen.getByTestId("citation-Loan.unknown"));
     await waitFor(() => expect(locateMock).toHaveBeenCalled());
     // setPendingModelJump must NOT have been called for null.
     expect(setPendingModelJump).not.toHaveBeenCalled();

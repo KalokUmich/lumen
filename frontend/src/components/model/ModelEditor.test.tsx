@@ -30,7 +30,7 @@ beforeEach(() => {
   Object.values(apiMocks).forEach((m) => m.mockReset());
   apiMocks.listModelFiles.mockResolvedValue([
     { path: "examples/orders.yml", size: 1234, vertical: null },
-    { path: "verticals/tpch/orders.yml", size: 5678, vertical: "tpch" },
+    { path: "verticals/lending/loan.yml", size: 5678, vertical: "lending" },
   ]);
   apiMocks.getModelFile.mockResolvedValue({
     path: "examples/orders.yml",
@@ -44,7 +44,7 @@ describe("ModelEditor", () => {
     await waitFor(() =>
       expect(screen.getByTestId("file-row-examples/orders.yml")).toBeInTheDocument(),
     );
-    expect(screen.getByTestId("file-row-verticals/tpch/orders.yml")).toBeInTheDocument();
+    expect(screen.getByTestId("file-row-verticals/lending/loan.yml")).toBeInTheDocument();
   });
 
   it("auto-selects the first file and shows its content", async () => {
@@ -56,12 +56,12 @@ describe("ModelEditor", () => {
 
   it("respects initialPath when provided (citation jump)", async () => {
     apiMocks.getModelFile.mockResolvedValue({
-      path: "verticals/tpch/orders.yml",
+      path: "verticals/lending/loan.yml",
       content: "cubes:\n  - name: Orders\n",
     });
-    mountEditor("verticals/tpch/orders.yml");
+    mountEditor("verticals/lending/loan.yml");
     await waitFor(() =>
-      expect(apiMocks.getModelFile).toHaveBeenCalledWith("verticals/tpch/orders.yml"),
+      expect(apiMocks.getModelFile).toHaveBeenCalledWith("verticals/lending/loan.yml"),
     );
   });
 
@@ -127,14 +127,14 @@ describe("ModelEditor", () => {
   it("switching files re-fetches content", async () => {
     apiMocks.getModelFile
       .mockResolvedValueOnce({ path: "examples/orders.yml", content: "first" })
-      .mockResolvedValueOnce({ path: "verticals/tpch/orders.yml", content: "second" });
+      .mockResolvedValueOnce({ path: "verticals/lending/loan.yml", content: "second" });
     mountEditor();
     await waitFor(() =>
       expect(apiMocks.getModelFile).toHaveBeenCalledWith("examples/orders.yml"),
     );
-    fireEvent.click(screen.getByTestId("file-row-verticals/tpch/orders.yml"));
+    fireEvent.click(screen.getByTestId("file-row-verticals/lending/loan.yml"));
     await waitFor(() =>
-      expect(apiMocks.getModelFile).toHaveBeenCalledWith("verticals/tpch/orders.yml"),
+      expect(apiMocks.getModelFile).toHaveBeenCalledWith("verticals/lending/loan.yml"),
     );
   });
 });

@@ -1,5 +1,6 @@
-.PHONY: help install seed seed-tpch seed-orders smoke smoke-tpch smoke-orders \
-        backend frontend dev clean lint typecheck test
+.PHONY: help install install-backend install-frontend seed seed-lending seed-lending-small \
+        smoke backend frontend dev clean lint typecheck test stop-backend \
+        docker-build docker-up docker-down docker-logs docker-clean docker-ps docker-infra-up
 
 PY := backend/.venv/bin/python
 PIP := backend/.venv/bin/pip
@@ -7,11 +8,12 @@ PIP := backend/.venv/bin/pip
 help:
 	@echo "Lumen — common dev commands"
 	@echo
-	@echo "  make install        Set up Python venv + install backend deps"
-	@echo "  make seed-tpch      Seed local DuckDB with TPC-H scale=0.1 (~100MB)"
-	@echo "  make seed-orders    Seed local DuckDB with the synthetic orders fixture"
-	@echo "  make smoke          Run the AI smoke test (mock LLM, TPC-H)"
-	@echo "  make smoke-orders   Run the AI smoke test (mock LLM, orders fixture)"
+	@echo "  make install        Set up Python venv + install backend & frontend deps"
+	@echo "  make install-backend   Backend deps only (Python venv)"
+	@echo "  make install-frontend  Frontend deps only (npm ci)"
+	@echo "  make seed-lending       Seed local DuckDB with consumer-lending data (~1.9GB, 35M rows)"
+	@echo "  make seed-lending-small Same data at 5% scale (~100MB, fast iteration)"
+	@echo "  make smoke              Run the AI smoke test (mock LLM, lending fixture)"
 	@echo "  make backend        Launch all 4 backend services in the background"
 	@echo "  make frontend       Launch the Vite dev server"
 	@echo "  make dev            Backend + frontend together"
@@ -19,8 +21,19 @@ help:
 	@echo "  make typecheck      pyright on backend/"
 	@echo "  make test           pytest backend/"
 	@echo "  make clean          Remove .venv, .duckdb files, app.db"
+	@echo
+	@echo "  ── Docker ──"
+	@echo "  make docker-build   Build backend + frontend images"
+	@echo "  make docker-up      Start full stack (backend services + frontend) in background"
+	@echo "  make docker-down    Stop the stack"
+	@echo "  make docker-logs    Tail logs from all containers"
+	@echo "  make docker-ps      Show container status"
+	@echo "  make docker-clean   Stop + remove volumes (frontend_node_modules, pg_data)"
+	@echo "  make docker-infra-up   Start optional infra (postgres, cube, redis, temporal, localstack)"
 
-install:
+install: install-backend install-frontend
+
+install-backend:
 	@test -d backend/.venv || python3 -m venv backend/.venv
 	$(PIP) install --quiet --upgrade pip
 	$(PIP) install --quiet \
@@ -34,6 +47,15 @@ install:
 	@echo "✓ backend env ready"
 	@echo "  python: $$($(PY) --version)"
 	@echo "  packages: $$($(PIP) list --format=freeze | wc -l)"
+
+install-frontend:
+	@command -v npm >/dev/null || { echo "✗ npm not found — install Node.js (>=18) first"; exit 1; }
+	@if [ -f frontend/package-lock.json ]; then \
+		cd frontend && npm ci; \
+	else \
+		cd frontend && npm install; \
+	fi
+	@echo "✓ frontend deps installed"
 
 seed: seed-lending
 
@@ -66,13 +88,14 @@ backend:
 	@JWT_SIGNING_KEY=local-dev-only \
 	 AI_SERVICE_URL=http://localhost:8001 \
 	 QUERY_SERVICE_URL=http://localhost:8002 \
-	 PYTHONPATH=backend $(PY) -m uvicorn services.api_gateway.main:app --port 8000 --log-level warning >/tmp/lumen-logs/gateway.log 2>&1 &
+	 PYTHONPATH=backend $(PY) -m uvicorn services.api_gateway.main:app --port 8088 --log-level warning >/tmp/lumen-logs/gateway.log 2>&1 &
 	@sleep 2
-	@echo "✓ services up: gateway:8000  ai:8001  query:8002  workspace:8004"
+	@echo "✓ services up: gateway:8088  ai:8001  query:8002  workspace:8004"
 	@echo "  logs: tail -f /tmp/lumen-logs/*.log"
 	@echo "  stop: pkill -f 'lumen|uvicorn services'"
 
 frontend:
+	@test -d frontend/node_modules || $(MAKE) install-frontend
 	cd frontend && npm run dev
 
 dev: backend frontend
@@ -95,3 +118,39 @@ clean:
 	rm -f local_test/data/*.duckdb local_test/data/app.db
 	rm -rf /tmp/lumen-logs
 	@echo "✓ clean"
+
+# ── Docker ──────────────────────────────────────────────────────────────
+
+docker-build:
+	docker compose build
+
+docker-up:
+	@test -f local_test/data/lending.duckdb || { echo "✗ local_test/data/lending.duckdb not found — run 'make seed-lending' first (the file is bind-mounted into the containers)"; exit 1; }
+	docker compose up -d
+	@echo
+	@echo "✓ stack up"
+	@echo "  frontend:  http://localhost:5173"
+	@echo "  gateway:   http://localhost:8088"
+	@echo "  ai:        http://localhost:8001"
+	@echo "  query:     http://localhost:8002"
+	@echo "  workspace: http://localhost:8004"
+	@echo
+	@echo "  logs: make docker-logs"
+	@echo "  stop: make docker-down"
+
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f
+
+docker-ps:
+	docker compose ps
+
+docker-clean:
+	docker compose down -v
+	@echo "✓ stack + volumes removed"
+
+docker-infra-up:
+	docker compose --profile infra up -d
+	@echo "✓ infra up: postgres:5432  redis:6379  cube:4000  temporal:7233  localstack:4566"

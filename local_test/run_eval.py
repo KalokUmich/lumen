@@ -74,10 +74,7 @@ async def run_one_case(case: dict[str, Any], schema_summary: str, glossary: str,
     from services.ai_service import cube_runner
     from services.ai_service.stream import ChatContext, respond
 
-    if vertical == "tpch":
-        from local_test import duckdb_query_runner_tpch as qr
-    else:
-        from local_test import duckdb_query_runner as qr
+    from local_test import duckdb_query_runner_lending as qr
 
     async def _local_run(query: dict[str, Any], _ctx: WorkspaceContext) -> dict[str, Any]:
         try:
@@ -149,14 +146,14 @@ async def main(args: argparse.Namespace) -> int:
     os.environ.setdefault("USE_MOCK_LLM", "false")
     os.environ.setdefault("JWT_SIGNING_KEY", "local-dev-only")
 
-    # Always use TPC-H for the golden set (the schema_bundle the eval was written against)
+    # Golden set is written against the lending vertical.
     from shared.schema_bundle import get_bundle
-    bundle = get_bundle("tpch")
+    bundle = get_bundle("lending")
     schema_summary = bundle["schema_summary"]
     glossary = bundle["glossary"]
 
     cases = load_cases(args.limit)
-    print(f"Running {len(cases)} eval cases against vertical=tpch\n")
+    print(f"Running {len(cases)} eval cases against vertical=lending\n")
 
     results: list[dict[str, Any]] = []
     pass_count = 0
@@ -164,7 +161,7 @@ async def main(args: argparse.Namespace) -> int:
 
     for i, case in enumerate(cases, 1):
         print(f"[{i:>2}/{len(cases)}] {case['id']:<35} ", end="", flush=True)
-        result = await run_one_case(case, schema_summary, glossary, "tpch")
+        result = await run_one_case(case, schema_summary, glossary, "lending")
         passed, reasons = evaluate(result["generated_query"], case.get("expected", {}))
         result["passed"] = passed
         result["reasons"] = reasons

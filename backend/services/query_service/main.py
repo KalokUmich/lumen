@@ -2,8 +2,7 @@
 
 Backends:
   - LUMEN_QUERY_BACKEND=cube (default in production) → real Cube
-  - LUMEN_QUERY_BACKEND=duckdb_tpch → local DuckDB via local_test/duckdb_query_runner_tpch.py
-  - LUMEN_QUERY_BACKEND=duckdb_orders → local DuckDB via local_test/duckdb_query_runner.py
+  - LUMEN_QUERY_BACKEND=duckdb_lending → local DuckDB via local_test/duckdb_query_runner_lending.py
 """
 
 from __future__ import annotations
@@ -73,14 +72,8 @@ async def _execute(query: dict[str, Any], ctx: WorkspaceContext) -> dict[str, An
         import sys
         import time as _time
         sys.path.insert(0, str(_repo_root()))
-        # Look up the workspace's vertical to pick the right runner.
         vertical = await _vertical_for(ctx.workspace_id)
-        if vertical == "lending":
-            from local_test import duckdb_query_runner_lending as r
-        elif vertical == "orders":
-            from local_test import duckdb_query_runner as r
-        else:
-            from local_test import duckdb_query_runner_lending as r  # type: ignore[no-redef]
+        from local_test import duckdb_query_runner_lending as r
         t0 = _time.perf_counter()
         result = r.run_query(query)
         ms = round((_time.perf_counter() - t0) * 1000, 1)
@@ -113,18 +106,18 @@ async def _vertical_for(workspace_id: str) -> str:
         return _workspace_vertical_cache[workspace_id]
     workspace_url = os.environ.get("WORKSPACE_SERVICE_URL")
     if not workspace_url:
-        return os.environ.get("LUMEN_DEFAULT_VERTICAL", "tpch")
+        return os.environ.get("LUMEN_DEFAULT_VERTICAL", "lending")
     try:
         import httpx
         async with httpx.AsyncClient(timeout=2.0) as client:
             r = await client.get(f"{workspace_url}/internal/workspaces/{workspace_id}/schema-bundle")
             if r.status_code == 200:
-                vertical = r.json().get("vertical", "tpch")
+                vertical = r.json().get("vertical", "lending")
                 _workspace_vertical_cache[workspace_id] = vertical
                 return vertical
     except Exception:
         pass
-    return os.environ.get("LUMEN_DEFAULT_VERTICAL", "tpch")
+    return os.environ.get("LUMEN_DEFAULT_VERTICAL", "lending")
 
 
 def _repo_root():

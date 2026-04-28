@@ -1,6 +1,6 @@
 """Seed a synthetic consumer-lending dataset into a DuckDB file.
 
-Replaces TPC-H + SaaS Finance as Lumen's primary test fixture.
+Lumen's primary local test fixture.
 
 Schema:
     customers           ~1M rows   demographics, FICO, income, signup

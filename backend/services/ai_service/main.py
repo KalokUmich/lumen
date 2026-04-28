@@ -102,7 +102,7 @@ async def _load_schema_bundle(
             pass
 
     # Phase 0 in-process fallback: read straight from YAML by vertical name.
-    vertical = os.environ.get("LUMEN_DEFAULT_VERTICAL", "tpch")
+    vertical = os.environ.get("LUMEN_DEFAULT_VERTICAL", "lending")
     try:
         from shared.schema_bundle import get_bundle
         bundle = get_bundle(vertical)

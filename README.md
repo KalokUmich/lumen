@@ -6,36 +6,40 @@
 
 ## Quick start (local dev)
 
-Prereqs: Docker, Docker Compose, Node 20+, Python 3.12+, [`uv`](https://github.com/astral-sh/uv) optional. **No AWS credentials needed for the smoke test** (mock LLM mode).
+Prereqs: Docker + Docker Compose, Node 20+, Python 3.12+. **No AWS credentials
+needed for the smoke test** (mock LLM mode).
+
+### Option A — Docker (recommended)
 
 ```bash
-# 1. Bring up backing services (Postgres, Redis, Cube, Temporal, LocalStack)
-docker compose up -d
+make install            # Python venv + npm install (host-side, for tests/lint)
+make seed-lending       # consumer-lending fixture (~1.9 GB) — bind-mounted into the containers
+make docker-up          # builds + starts gateway, ai, query, workspace, frontend
+                        # → http://localhost:5173
 
-# 2. Install backend deps
-cd backend && uv sync && cd ..
+make docker-logs        # tail logs
+make docker-down        # stop the stack
+```
 
-# 3. Install frontend deps
-cd frontend && npm install && cd ..
+### Option B — Run on host
 
-# 4. Configure local secrets / settings (gitignored)
-cp config/secrets.yaml config/secrets.local.yaml      # then fill in keys you have
-cp config/settings.yaml config/settings.local.yaml    # optional overrides
+```bash
+make install            # backend venv + frontend deps
+make seed-lending       # or: make seed-lending-small (5%, ~100 MB)
+make backend            # 4 uvicorn services in the background, logs in /tmp/lumen-logs/
+make frontend           # Vite on http://localhost:5173
 
-# 5. Seed a local SQLite/DuckDB warehouse with realistic business data (TPC-H)
-python local_test/seed_tpch.py
+make smoke              # AI smoke test (mock LLM, no API keys needed)
+```
 
-# 6. Start backend services (each in its own terminal, or use a process manager)
-cd backend
-uv run uvicorn services.api_gateway.main:app --reload --port 8000
-uv run uvicorn services.ai_service.main:app   --reload --port 8001
-uv run uvicorn services.query_service.main:app --reload --port 8002
+### Configure secrets (optional, only for real LLM calls)
 
-# 7. Start frontend
-cd frontend && npm run dev   # http://localhost:5173
-
-# 8. Run the smoke test (no LLM provider keys needed)
-python local_test/run_local_test.py --mock
+```bash
+# config/secrets.local.yaml is gitignored. Fill in whichever provider you'll use:
+#   llm.bedrock.aws_access_key_id / aws_secret_access_key
+#   llm.anthropic.api_key
+#   llm.alibaba.api_key
+# Default `make smoke` and `make docker-up` use USE_MOCK_LLM=true so this is optional.
 ```
 
 ## Repo layout
@@ -54,7 +58,7 @@ lumen/
 │   ├── services/               # api_gateway, ai_service, query_service, ...
 │   └── cube/                   # Cube semantic layer (config + schemas)
 ├── frontend/                   # Reference web app (React + Vite + Observable Plot)
-├── local_test/                 # Local test scheme with TPC-H business dataset
+├── local_test/                 # Local test scheme with consumer-lending fixture
 └── docs/                       # Tutorials, API ref, runbooks
 ```
 

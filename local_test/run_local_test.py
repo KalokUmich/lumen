@@ -1,13 +1,11 @@
 """End-to-end smoke test for the AI loop, backed by DuckDB.
 
-Runs without docker, without AWS (with --mock), without Postgres.
-Supports two verticals:
-  --vertical tpch    : TPC-H decision-support dataset (~100MB at SF=0.1)
-  --vertical orders  : the original demo orders/customers fixture
+Runs without docker, without AWS (with --mock), without Postgres. Uses
+the consumer-lending fixture as the sole test vertical.
 
 Usage:
-    python local_test/run_local_test.py --mock --vertical tpch
-    python local_test/run_local_test.py        --vertical tpch    # uses configured provider
+    python local_test/run_local_test.py --mock
+    python local_test/run_local_test.py            # uses configured provider
 """
 
 from __future__ import annotations
@@ -24,78 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
 
-# ── Smoke questions per vertical ──────────────────────────────────────────────
-
-
-SMOKE_QUESTIONS_TPCH: list[dict[str, Any]] = [
-    {
-        "question": "What's our total revenue?",
-        "expects": {"measures_subset": ["LineItem.revenue"], "must_succeed": True},
-    },
-    {
-        "question": "Top 5 nations by revenue",
-        "expects": {
-            "measures_subset": ["LineItem.revenue"],
-            "dimensions_subset": ["Nation.name"],
-            "must_succeed": True,
-        },
-    },
-    {
-        "question": "Show revenue by customer segment",
-        "expects": {
-            "measures_subset": ["LineItem.revenue"],
-            "dimensions_subset": ["Customer.market_segment"],
-            "must_succeed": True,
-        },
-    },
-    {
-        "question": "How many orders did we have last year?",
-        "expects": {"measures_subset": ["Orders.count"], "must_succeed": True},
-    },
-    {
-        "question": "Returned line items by ship mode",
-        "expects": {
-            "measures_subset": ["LineItem.count"],
-            "segments_subset": ["LineItem.returned"],
-            "must_succeed": True,
-        },
-    },
-    {
-        "question": "Customer count by region",
-        "expects": {
-            "measures_subset": ["Customer.count"],
-            "dimensions_subset": ["Region.name"],
-            "must_succeed": True,
-        },
-    },
-]
-
-
-SMOKE_QUESTIONS_ORDERS: list[dict[str, Any]] = [
-    {
-        "question": "What was our total revenue last month?",
-        "expects": {"measures_subset": ["Orders.revenue"], "must_succeed": True},
-    },
-    {
-        "question": "Top 5 countries by revenue",
-        "expects": {
-            "measures_subset": ["Orders.revenue"],
-            "dimensions_subset": ["Orders.country"],
-            "must_succeed": True,
-        },
-    },
-    {
-        "question": "How many orders did we get this year by month?",
-        "expects": {"measures_subset": ["Orders.order_count"], "must_succeed": True},
-    },
-    {
-        "question": "What's the AOV trend by month?",
-        "expects": {"measures_subset": ["Orders.aov"], "must_succeed": True},
-    },
-]
-
-
-SMOKE_QUESTIONS_LENDING: list[dict[str, Any]] = [
+SMOKE_QUESTIONS: list[dict[str, Any]] = [
     {
         "question": "What's our total origination volume?",
         "expects": {"measures_subset": ["Loan.total_originated"], "must_succeed": True},
@@ -134,13 +61,6 @@ SMOKE_QUESTIONS_LENDING: list[dict[str, Any]] = [
 ]
 
 
-VERTICALS = {
-    "tpch": SMOKE_QUESTIONS_TPCH,
-    "orders": SMOKE_QUESTIONS_ORDERS,
-    "lending": SMOKE_QUESTIONS_LENDING,
-}
-
-
 # ── Environment + data checks ─────────────────────────────────────────────────
 
 
@@ -151,51 +71,27 @@ def _set_dev_env(args: argparse.Namespace) -> None:
         os.environ["USE_MOCK_LLM"] = "true"
 
     data_dir = Path(__file__).parent / "data"
-    if args.vertical == "tpch":
-        os.environ["LOCAL_SCHEMA_SUMMARY_PATH"] = str(data_dir / "tpch_schema_summary.txt")
-        os.environ["LOCAL_GLOSSARY_PATH"] = str(data_dir / "tpch_glossary.md")
-    elif args.vertical == "lending":
-        os.environ["LOCAL_SCHEMA_SUMMARY_PATH"] = str(data_dir / "lending_schema_summary.txt")
-        os.environ["LOCAL_GLOSSARY_PATH"] = str(data_dir / "lending_glossary.md")
-    else:
-        os.environ["LOCAL_SCHEMA_SUMMARY_PATH"] = str(data_dir / "schema_summary.txt")
-        os.environ["LOCAL_GLOSSARY_PATH"] = str(data_dir / "glossary.md")
+    os.environ["LOCAL_SCHEMA_SUMMARY_PATH"] = str(data_dir / "lending_schema_summary.txt")
+    os.environ["LOCAL_GLOSSARY_PATH"] = str(data_dir / "lending_glossary.md")
 
 
-def _check_seed_data(args: argparse.Namespace) -> None:
-    if args.vertical == "tpch":
-        db = Path(os.environ.get("LOCAL_TPCH_DUCKDB_PATH", Path(__file__).parent / "data" / "tpch.duckdb"))
-        if not db.exists():
-            print("⚠ TPC-H seed data missing. Run:  python local_test/seed_tpch.py")
-            sys.exit(2)
-    elif args.vertical == "lending":
-        db = Path(os.environ.get("LOCAL_LENDING_DUCKDB_PATH", Path(__file__).parent / "data" / "lending.duckdb"))
-        if not db.exists():
-            print("⚠ Lending seed data missing. Run:  make seed-lending")
-            sys.exit(2)
-    else:
-        db = Path(os.environ.get("LOCAL_DUCKDB_PATH", Path(__file__).parent / "data" / "warehouse.duckdb"))
-        if not db.exists():
-            print("⚠ Orders seed data missing. Run:  python local_test/seed_duckdb.py")
-            sys.exit(2)
+def _check_seed_data() -> None:
+    db = Path(os.environ.get("LOCAL_LENDING_DUCKDB_PATH", Path(__file__).parent / "data" / "lending.duckdb"))
+    if not db.exists():
+        print("⚠ Lending seed data missing. Run:  make seed-lending")
+        sys.exit(2)
 
 
 # ── Single-question execution ─────────────────────────────────────────────────
 
 
-async def run_one(question: str, expects: dict[str, Any], vertical: str) -> dict[str, Any]:
+async def run_one(question: str, expects: dict[str, Any]) -> dict[str, Any]:
     """Run the AI loop for one question, routing Cube execution to DuckDB."""
     from shared.auth import WorkspaceContext
     from shared.llm_providers import get_registry
     from services.ai_service import cube_runner
     from services.ai_service.stream import ChatContext, respond
-
-    if vertical == "tpch":
-        from local_test import duckdb_query_runner_tpch as qr
-    elif vertical == "lending":
-        from local_test import duckdb_query_runner_lending as qr
-    else:
-        from local_test import duckdb_query_runner as qr
+    from local_test import duckdb_query_runner_lending as qr
 
     async def _local_run(query: dict[str, Any], ctx: WorkspaceContext) -> dict[str, Any]:
         return qr.run_query(query)
@@ -208,7 +104,7 @@ async def run_one(question: str, expects: dict[str, Any], vertical: str) -> dict
     ctx = ChatContext(
         workspace_ctx=WorkspaceContext(
             user_id="user-local",
-            workspace_id=f"ws-local-{vertical}",
+            workspace_id="ws-local-lending",
             role="admin",
             user_attrs={},
             workspace_preset="balanced",
@@ -288,20 +184,18 @@ def evaluate(result: dict[str, Any]) -> tuple[bool, str]:
 
 async def main(args: argparse.Namespace) -> int:
     _set_dev_env(args)
-    _check_seed_data(args)
-
-    questions = VERTICALS[args.vertical]
+    _check_seed_data()
 
     print(f"Mode:     {'MOCK LLM' if args.mock else 'REAL PROVIDER'}")
-    print(f"Vertical: {args.vertical}")
-    print(f"Running {len(questions)} smoke questions...\n")
+    print(f"Vertical: lending")
+    print(f"Running {len(SMOKE_QUESTIONS)} smoke questions...\n")
 
     pass_count = 0
     fail_count = 0
 
-    for i, case in enumerate(questions, 1):
-        print(f"[{i}/{len(questions)}] {case['question']}")
-        result = await run_one(case["question"], case["expects"], args.vertical)
+    for i, case in enumerate(SMOKE_QUESTIONS, 1):
+        print(f"[{i}/{len(SMOKE_QUESTIONS)}] {case['question']}")
+        result = await run_one(case["question"], case["expects"])
         passed, reason = evaluate(result)
         if passed:
             pass_count += 1
@@ -324,12 +218,6 @@ async def main(args: argparse.Namespace) -> int:
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--mock", action="store_true", help="Use mock LLM (no AWS / no API keys)")
-    p.add_argument(
-        "--vertical",
-        choices=list(VERTICALS.keys()),
-        default="tpch",
-        help="Which business vertical to test against",
-    )
     return p.parse_args()
 
 

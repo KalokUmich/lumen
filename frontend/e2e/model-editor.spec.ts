@@ -40,9 +40,9 @@ test("model editor loads files, validates a known-good cube, then closes cleanly
   const panel = page.getByTestId("validation-panel");
   await expect(panel).toBeVisible({ timeout: 5_000 });
 
-  // Either Valid (if the tpch/orders.yml is the active file) OR shows errors —
-  // either is a *successful* validation round-trip; what we care about is the
-  // panel rendered with the API call result.
+  // Either Valid (if the active file passes) OR shows errors — either is a
+  // *successful* validation round-trip; what we care about is the panel
+  // rendered with the API call result.
   const text = (await panel.textContent()) ?? "";
   expect(/Valid|error/.test(text)).toBe(true);
 

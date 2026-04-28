@@ -239,12 +239,6 @@ function detectOrdinalSort(values: unknown[]): ((a: unknown, b: unknown) => numb
     return (a, b) => (tierIdx(a) ?? 0) - (tierIdx(b) ?? 0);
   }
 
-  // Pattern 6: TPC-H order status (F, O, P) — known business meaning
-  if (sample.every((s) => ["F","O","P"].includes(String(s)))) {
-    const order: Record<string, number> = { F: 0, O: 1, P: 2 };
-    return (a, b) => (order[String(a)] ?? 99) - (order[String(b)] ?? 99);
-  }
-
   // Nominal — no detected order. Keep server-side sort.
   return null;
 }

@@ -66,7 +66,7 @@ app = FastAPI(title="Lumen Workspace Service", lifespan=lifespan)
 class WorkspaceCreate(BaseModel):
     slug: str
     name: str
-    vertical: str = "tpch"
+    vertical: str = "lending"
     llm_preset: str = "balanced"
 
 

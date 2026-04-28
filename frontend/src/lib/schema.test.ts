@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parseSchema } from "./schema";
 
-const SAMPLE_SCHEMA = `# Cube Semantic Model — tpch vertical
+const SAMPLE_SCHEMA = `# Cube Semantic Model — sample (parser test fixture)
 
 ## Cube: Orders
 Description: One row per customer order.

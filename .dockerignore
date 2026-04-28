@@ -1,0 +1,47 @@
+# Python
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/venv
+**/.uv-cache
+**/*.egg-info
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+
+# Node
+**/node_modules
+**/dist
+**/.vite
+**/*.tsbuildinfo
+**/.npm
+
+# Test artifacts
+frontend/test-results
+frontend/.playwright
+frontend/playwright-report
+backend/test-results
+
+# DuckDB / SQLite (bind-mounted at runtime, not baked into image)
+local_test/data/*.duckdb
+local_test/data/app.db
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+
+# Git
+.git
+.gitignore
+
+# Docker / build outputs
+**/Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Logs
+/tmp/lumen-logs
+*.log

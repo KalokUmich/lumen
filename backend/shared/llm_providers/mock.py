@@ -3,7 +3,7 @@
 Schema-aware: parses the system prompt for `Cube.member` patterns to discover
 which measures/dimensions/segments exist in the current workspace, then maps
 user keywords to whatever it finds. This way the mock works for any vertical
-(TPC-H, Orders, future ones) without code changes.
+without code changes.
 
 Stateless but message-aware: detects an existing tool_result in the conversation
 to know when to emit a final_answer (vs another run_cube_query).
@@ -373,9 +373,9 @@ def _build_query(question: str, schema: dict[str, set[str]]) -> dict[str, Any]:
 
     measure = _find_member(question, schema["measures"], _MEASURE_CONCEPTS)
     if not measure and schema["measures"]:
-        # Fallback: vertical-aware. Prefer headline measures by name match.
-        # Lending → total_originated; SaaS → mrr; TPC-H → revenue; otherwise count.
-        for needle in ("total_originated", "revenue", "mrr"):
+        # Fallback: prefer headline measures by name match across verticals
+        # (e.g. lending → total_originated; generic → revenue), otherwise count.
+        for needle in ("total_originated", "revenue"):
             for m in schema["measures"]:
                 if needle in m.lower():
                     measure = m
